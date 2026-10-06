@@ -179,6 +179,7 @@ function sheetPortRows() {
     if (group < groupCount - 1) rows.push(null, null);
   }
   if (data.boxType === "x16") rows.push(null, null);
+  else rows.push(null, null, null, null, null, null);
   return rows;
 }
 
