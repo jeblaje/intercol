@@ -1,5 +1,6 @@
 const THEME_KEY = "intercol_theme_v2";
 const VIEW_KEY = "intercol_active_view_v1";
+const TEMP_MESSAGES_KEY = "intercol_temporary_messages_v1";
 
 const state = {
   sections: Array.isArray(window.INTERCOL_SECTIONS) ? window.INTERCOL_SECTIONS : [],
@@ -97,37 +98,86 @@ function setView(view) {
 
 function renderDashboard() {
   content.innerHTML = `
-    <section class="hero">
-      <div>
-        <span class="eyebrow">PANEL CENTRAL</span>
-        <h2>Un dashboard. Todas tus secciones.</h2>
-        <p>INTERCOL funciona como un shell único. El menú, el tema y la estructura general viven aquí; cada herramienta vive de forma independiente dentro de <strong>/secciones</strong>.</p>
-      </div>
-    </section>
-    <section class="stats-grid">
-      <article class="stat-card"><span class="stat-label">Secciones disponibles</span><div class="stat-value">${state.sections.length}</div><span class="stat-help">Cargadas desde /secciones/registry.js</span></article>
-      <article class="stat-card"><span class="stat-label">Tema global</span><div class="stat-value">${state.theme === "dark" ? "Oscuro" : "Claro"}</div><span class="stat-help">También se envía a las secciones</span></article>
-      <article class="stat-card"><span class="stat-label">Arquitectura</span><div class="stat-value">1 shell</div><span class="stat-help">Sin duplicar sidebar ni dashboard</span></article>
-    </section>
-    <section class="panel">
-      <div class="panel-header"><div><h3>Secciones</h3><span>Herramientas independientes dentro del mismo entorno</span></div></div>
-      <div class="panel-body quick-grid" id="dashboardSections"></div>
+    <section class="dashboard-split" aria-label="Panel del dashboard">
+      <div class="dashboard-blank" aria-label="Espacio de trabajo"></div>
+      <section class="panel dashboard-messages">
+        <div class="panel-header"><div><h3>Mensajes temporales</h3><span id="dashboardMessageCount">Mensajes que siguen vigentes</span></div><button class="secondary-button" id="manageTemporaryMessages" type="button">Administrar</button></div>
+        <div class="dashboard-message-list" id="dashboardMessageList" aria-live="polite"></div>
+      </section>
     </section>
   `;
+  $("#manageTemporaryMessages").addEventListener("click", () => openSection("mensajes-temporales"));
+  renderDashboardMessages();
+}
 
-  const grid = $("#dashboardSections");
-  if (!state.sections.length) {
-    grid.innerHTML = `<div class="placeholder" style="grid-column:1/-1"><div><strong>No hay secciones registradas.</strong><p>Crea una carpeta dentro de /secciones y registra su ruta en registry.js.</p></div></div>`;
+function readTemporaryMessages() {
+  try {
+    const data = JSON.parse(localStorage.getItem(TEMP_MESSAGES_KEY) || "[]");
+    return Array.isArray(data) ? data.filter((item) => item && typeof item.text === "string" && Number.isFinite(Date.parse(item.expiresAt))) : [];
+  } catch { return []; }
+}
+
+function renderDashboardMessages() {
+  const list = $("#dashboardMessageList");
+  if (!list) return;
+  const now = Date.now();
+  const messages = readTemporaryMessages();
+  const active = messages.filter((message) => Date.parse(message.expiresAt) > now);
+  if (active.length !== messages.length) {
+    try { localStorage.setItem(TEMP_MESSAGES_KEY, JSON.stringify(active)); } catch { /* Keep dashboard usable if storage is unavailable. */ }
+  }
+  $("#dashboardMessageCount").textContent = `${active.length} mensaje${active.length === 1 ? " vigente" : "s vigentes"}`;
+  list.replaceChildren();
+  if (!active.length) {
+    const empty = document.createElement("p");
+    empty.className = "dashboard-message-empty";
+    empty.textContent = "No hay mensajes vigentes. Puedes crear uno desde Administrar.";
+    list.appendChild(empty);
     return;
   }
-
-  grid.innerHTML = state.sections.map((section, index) => `
-    <button class="quick-action" data-open-section="${escapeHtml(section.id)}">
-      <span class="quick-icon">${escapeHtml(section.icon || String(index + 1))}</span>
-      <span><strong>${escapeHtml(section.name)}</strong><span>${escapeHtml(section.description || "Sección INTERCOL")}</span></span>
-    </button>
-  `).join("");
-  grid.querySelectorAll("[data-open-section]").forEach((button) => button.addEventListener("click", () => openSection(button.dataset.openSection)));
+  active.sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt)).forEach((message) => {
+    const card = document.createElement("article");
+    card.className = "dashboard-message";
+    const messageHeader = document.createElement("div");
+    messageHeader.className = "dashboard-message-header";
+    const body = document.createElement("p");
+    body.textContent = message.text;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "dashboard-copy-button";
+    copy.title = "Copiar mensaje";
+    copy.setAttribute("aria-label", "Copiar mensaje");
+    copy.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path></svg>';
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(message.text);
+        copy.title = "Mensaje copiado";
+        copy.setAttribute("aria-label", "Mensaje copiado");
+        copy.classList.add("copied");
+        window.setTimeout(() => {
+          copy.title = "Copiar mensaje";
+          copy.setAttribute("aria-label", "Copiar mensaje");
+          copy.classList.remove("copied");
+        }, 1500);
+      } catch {
+        copy.title = "No se pudo copiar";
+        copy.setAttribute("aria-label", "No se pudo copiar");
+      }
+    });
+    const expiry = document.createElement("time");
+    expiry.dateTime = message.expiresAt;
+    expiry.textContent = `Vence: ${new Date(message.expiresAt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" })}`;
+    messageHeader.append(body, copy);
+    card.append(messageHeader);
+    if (message.advisor?.trim()) {
+      const advisor = document.createElement("div");
+      advisor.className = "dashboard-message-advisor";
+      advisor.textContent = `Asesor: ${message.advisor.trim()}`;
+      card.append(advisor);
+    }
+    card.append(expiry);
+    list.appendChild(card);
+  });
 }
 
 function renderSections() {
@@ -169,7 +219,7 @@ function openSection(id) {
       <div><span class="eyebrow">MÓDULO INDEPENDIENTE</span><p>${escapeHtml(section.description || "Sección INTERCOL")}</p></div>
       <button class="secondary-button" id="backToSections">← Secciones</button>
     </div>
-    <div class="section-frame-wrap"><iframe id="sectionFrame" title="${escapeHtml(section.name)}" src="${escapeAttribute(section.path)}"></iframe></div>
+    <div class="section-frame-wrap"><iframe id="sectionFrame" title="${escapeHtml(section.name)}" src="${escapeAttribute(section.path)}" allow="clipboard-write"></iframe></div>
   `;
   $("#backToSections").addEventListener("click", () => setView("sections"));
   const frame = $("#sectionFrame");
@@ -210,12 +260,17 @@ window.addEventListener("message", (event) => {
   broadcastTheme();
 });
 
+window.addEventListener("storage", (event) => {
+  if (event.key === TEMP_MESSAGES_KEY && state.activeView === "dashboard") renderDashboardMessages();
+});
+
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 $("#themeToggle").addEventListener("click", toggleTheme);
 $("#themePill").addEventListener("click", toggleTheme);
 $("#menuToggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 
 applyTheme();
+setInterval(() => { if (state.activeView === "dashboard") renderDashboardMessages(); }, 15000);
 renderSidebar();
 const savedView = loadCurrentView();
 if (savedView?.view === "section" && state.sections.some((section) => section.id === savedView.sectionId)) {

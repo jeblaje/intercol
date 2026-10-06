@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mensajes temporales · INTERCOL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="messages-app">
+    <header class="heading">
+      <div><span class="kicker">INTERCOL · DASHBOARD</span><h1>Mensajes temporales</h1><p>Los mensajes aparecen en el dashboard y se eliminan al llegar la fecha y hora de vencimiento.</p></div>
+    </header>
+    <section class="manager-card">
+      <form id="messageForm">
+        <input type="hidden" name="id">
+        <label for="messageText">Mensaje</label>
+        <textarea id="messageText" name="text" rows="5" placeholder="Escribe el mensaje que quieres mostrar en el dashboard" required></textarea>
+        <label for="messageAdvisor">Asesor <span class="optional">(opcional)</span></label>
+        <input id="messageAdvisor" name="advisor" type="text" placeholder="Nombre del asesor">
+        <label for="messageExpiry">Fecha y hora de vencimiento</label>
+        <input id="messageExpiry" name="expiresAt" type="datetime-local" required>
+        <div class="form-actions"><span id="formStatus" role="status" aria-live="polite"></span><button type="button" class="secondary" id="cancelEdit" hidden>Cancelar edición</button><button class="primary" type="submit" id="saveMessage">Publicar mensaje</button></div>
+      </form>
+    </section>
+    <section class="messages-section">
+      <div class="list-heading"><div><h2>Mensajes publicados</h2><p id="messageCount">0 mensajes vigentes</p></div></div>
+      <div id="messageList" class="message-list" aria-live="polite"></div>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>

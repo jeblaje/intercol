@@ -7,6 +7,13 @@
  */
 window.INTERCOL_SECTIONS = [
   {
+    id: "mensajes-temporales",
+    name: "Mensajes temporales",
+    description: "Crea y administra mensajes que aparecen en el dashboard hasta su vencimiento.",
+    icon: "◷",
+    path: "secciones/mensajes-temporales/index.html"
+  },
+  {
     id: "utilidades",
     name: "Utilidades",
     description: "Espacios para herramientas internas.",
