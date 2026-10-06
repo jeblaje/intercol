@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enviar moroso · INTERCOL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="debtor-app">
+    <header class="debtor-heading"><div><span class="kicker">INTERCOL · CLIENTES</span><h1>Datos moroso</h1><p>Completa los datos del moroso. Todos los campos son opcionales; solo se incluyen en el resultado los que llenes.</p></div></header>
+    <section class="debtor-card">
+      <form id="debtorForm" autocomplete="off">
+        <label>Nombre<input name="name" placeholder="Nombre completo"></label>
+        <label>Cédula<input name="cedula" inputmode="numeric" placeholder="Número de cédula"></label>
+        <label>Teléfono(s)<input name="phones" placeholder="Separa varios teléfonos con coma"></label>
+        <label>Dirección<input name="address" placeholder="Dirección"></label>
+        <label>Barrio<input name="neighborhood" placeholder="Barrio"></label>
+        <label class="full-width">Anotación<textarea name="note" rows="4" placeholder="Notas adicionales o comentarios"></textarea></label>
+        <div class="form-actions"><button type="button" class="clear-button" id="clearDebtor">Limpiar todo</button><span id="formStatus" role="status" aria-live="polite"></span></div>
+      </form>
+      <section class="output-section" aria-labelledby="outputTitle"><div class="output-label" id="outputTitle">Texto plano</div><div class="output-row"><textarea id="debtorOutput" readonly aria-label="Texto listo para enviar"></textarea><button type="button" class="copy-button" id="copyDebtor">Copiar</button></div><span id="copyStatus" role="status" aria-live="polite"></span></section>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>

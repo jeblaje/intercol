@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Utilidades · INTERCOL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="utilities-app">
+    <header class="utilities-heading">
+      <div><span class="kicker">HERRAMIENTAS INTERNAS</span><h1>Utilidades</h1><p>Espacios para las herramientas que agregaremos.</p></div>
+    </header>
+    <section class="utilities-grid" aria-label="Tarjetas de utilidades">
+      <article class="utility-card utility-tool" aria-labelledby="cedulaTitle">
+        <header class="tool-heading"><div><span class="tool-number">01</span><h2 id="cedulaTitle">Limpiar cédula</h2><p>Quita letras, puntos, espacios y cualquier carácter que no sea un número.</p></div></header>
+        <label class="field-label" for="cedulaInput">Texto original</label>
+        <textarea id="cedulaInput" rows="3" placeholder="Ej. cc16515561 o 1.151.15.135"></textarea>
+        <div class="tool-result"><label class="field-label" for="cedulaOutput">Solo números <span id="cedulaCount">0 dígitos</span></label><div class="result-row"><input id="cedulaOutput" type="text" readonly placeholder="Escribe o pega una cédula arriba"><button type="button" class="copy-button" id="copyCedula">Copiar</button></div></div>
+        <div class="tool-actions"><button type="button" class="clear-button" id="clearCedula">Limpiar</button><span id="cedulaStatus" class="tool-status" role="status" aria-live="polite"></span></div>
+      </article>
+      <article class="utility-card utility-tool" aria-labelledby="priceTitle">
+        <header class="tool-heading"><div><span class="tool-number">02</span><h2 id="priceTitle">Formatear valor</h2><p>Convierte el número a pesos colombianos, sin decimales.</p></div></header>
+        <label class="field-label" for="priceInput">Valor original</label>
+        <input id="priceInput" type="text" inputmode="decimal" placeholder="Ej. 63000 o 63.000">
+        <div class="tool-result"><label class="field-label" for="priceOutput">Valor formateado</label><div class="result-row"><input id="priceOutput" type="text" readonly placeholder="$0"><button type="button" class="copy-button" id="copyPrice">Copiar</button></div></div>
+        <div class="tool-actions"><button type="button" class="clear-button" id="clearPrice">Limpiar</button><span id="priceStatus" class="tool-status" role="status" aria-live="polite"></span></div>
+      </article>
+      <article class="utility-card utility-tool record-tool" aria-labelledby="recordTitle">
+        <header class="tool-heading"><div><span class="tool-number">03</span><h2 id="recordTitle">ANOTACIONES</h2><p>Prepara anotaciones de cambio de plan, reconexión, abono o cambio de titular.</p></div></header>
+        <label class="field-label" for="recordType">Tipo de gestión</label>
+        <select id="recordType"><option value="plan">Cambio de plan</option><option value="reconnection">Reconexión</option><option value="credit">Abono</option><option value="holder">Cambio de titular</option><option value="paymentdate">Cambio de fecha de pago</option></select>
+        <div class="date-display"><span>Fecha</span><strong id="recordDate"></strong></div>
+        <div id="planFields" class="record-fields">
+          <input id="planName" type="hidden"><input id="planPrice" type="hidden">
+          <div class="plan-group special-plans"><h3>Planes especiales</h3><div id="specialPlanChoices" class="plan-options"></div></div>
+          <div class="plan-group general-plans"><h3>Planes generales</h3><div id="generalPlanChoices" class="plan-options"></div></div>
+          <div class="selected-plan" id="selectedPlanText">Selecciona un plan</div>
+          <label class="field-label" for="planTechnician">Técnico (opcional)</label><input id="planTechnician" type="text" placeholder="Nombre del técnico">
+          <label class="field-label" for="planAdvisor">Asesor</label><input id="planAdvisor" type="text" placeholder="Nombre del asesor">
+        </div>
+        <div id="reconnectionFields" class="record-fields" hidden>
+          <fieldset class="payment-options"><legend>¿Qué paga?</legend><label><input id="paysMonth" type="checkbox"> Mes</label><label><input id="paysAdjustment" type="checkbox"> Reajuste</label></fieldset>
+          <label class="field-label" for="reconnectionTechnician">Técnico</label><input id="reconnectionTechnician" type="text" placeholder="Nombre del técnico">
+          <label class="field-label" for="paymentDay">Fecha de pago (día del mes)</label><input id="paymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 1">
+          <label class="field-label" for="reconnectionAdvisor">Asesor</label><input id="reconnectionAdvisor" type="text" placeholder="Nombre del asesor">
+        </div>
+        <div id="creditFields" class="record-fields" hidden>
+          <label class="field-label" for="invoiceNumber">Número de factura</label><input id="invoiceNumber" type="text" inputmode="numeric" placeholder="Ej. 507397">
+          <label class="field-label" for="waitingDay">Día de espera</label><input id="waitingDay" type="number" min="1" max="31" step="1" placeholder="Ej. 16">
+          <label class="field-label" for="creditAdvisor">Asesor</label><input id="creditAdvisor" type="text" placeholder="Nombre del asesor">
+        </div>
+        <div id="holderFields" class="record-fields" hidden>
+          <label class="field-label" for="oldHolder">Titular antiguo (nombre y cédula)</label><input id="oldHolder" type="text" placeholder="Ej. Cielo Luz Montero Nieves 49716169">
+          <label class="field-label" for="newHolder">Titular nuevo (nombre y cédula)</label><input id="newHolder" type="text" placeholder="Ej. Diana Rosa Herazo Vergara 1066878935">
+          <label class="field-label" for="holderAdvisor">Asesor</label><input id="holderAdvisor" type="text" placeholder="Nombre del asesor">
+        </div>
+        <div id="paymentDateFields" class="record-fields" hidden>
+          <label class="field-label" for="newPaymentDay">Día de pago (del mes)</label><input id="newPaymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 25">
+          <label class="field-label" for="paymentDateAdvisor">Asesor</label><input id="paymentDateAdvisor" type="text" placeholder="Nombre del asesor">
+        </div>
+        <div class="record-output"><label class="field-label" for="recordOutput">Texto listo para copiar</label><div class="result-row"><textarea id="recordOutput" rows="4" readonly></textarea><button type="button" class="copy-button" id="copyRecord">Copiar</button></div></div>
+        <div class="tool-actions"><button type="button" class="clear-button" id="clearRecord">Limpiar</button><span id="recordStatus" class="tool-status" role="status" aria-live="polite"></span></div>
+      </article>
+      <article class="utility-card" aria-label="Espacio de utilidad 4"></article>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>

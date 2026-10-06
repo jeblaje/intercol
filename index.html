@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="INTERCOL - Dashboard central para cargar secciones independientes.">
+  <title>INTERCOL Dashboard</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">I</div>
+        <div>
+          <strong>INTERCOL</strong>
+          <span>Workspace</span>
+        </div>
+      </div>
+
+      <nav class="main-nav" aria-label="Navegación principal">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span><span>Dashboard</span></button>
+        <button class="nav-item" data-view="sections"><span class="nav-icon">▣</span><span>Secciones</span></button>
+        <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span>Configuración</span></button>
+      </nav>
+
+      <div class="sidebar-section">
+        <div class="section-heading">
+          <span>SECCIONES</span>
+        </div>
+        <div class="session-list" id="sectionList" aria-live="polite"></div>
+        <div class="empty-sessions hidden" id="emptySections">
+          <span class="empty-icon">＋</span>
+          <p>No hay secciones registradas.</p>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="profile">
+          <div class="avatar">IC</div>
+          <div class="profile-copy"><strong>Mi espacio</strong><span>INTERCOL</span></div>
+        </div>
+        <button class="icon-button" id="themeToggle" title="Cambiar tema" aria-label="Cambiar tema">☾</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-button menu-toggle" id="menuToggle" aria-label="Abrir menú">☰</button>
+          <div>
+            <span class="eyebrow" id="pageEyebrow">ESPACIO DE TRABAJO</span>
+            <h1 id="pageTitle">Dashboard</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button class="theme-pill" id="themePill" type="button"><span id="themePillIcon">☾</span><span id="themePillText">Oscuro</span></button>
+        </div>
+      </header>
+
+      <section class="content" id="content"></section>
+    </main>
+  </div>
+
+  <script src="secciones/registry.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

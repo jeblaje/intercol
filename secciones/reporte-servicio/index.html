@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reporte servicio · INTERCOL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="report-app">
+    <header class="report-heading"><div><span class="kicker">INTERCOL · OPERACIONES</span><h1>Reporte servicio</h1><p>Completa la información según el tipo de reporte. El texto se organiza para copiarlo al chat de operación.</p></div><button type="button" class="clear-button" id="clearReport">Limpiar todo</button></header>
+    <section class="report-card">
+      <form id="reportForm">
+        <fieldset class="report-types"><legend>Tipo de reporte</legend>
+          <label class="type-choice"><input type="radio" name="reportType" value="Caja con potencia alta"><span>Caja con potencia alta</span></label>
+          <label class="type-choice"><input type="radio" name="reportType" value="Splitter autorizado"><span>Splitter autorizado</span></label>
+        </fieldset>
+        <div id="splitterFields" class="form-grid">
+          <label>Quién autorizó el splitter<input name="reporter" placeholder="Ej. Carlos" required></label>
+          <label>Número de caja<input name="boxNumber" placeholder="Ej. 1210" required></label>
+          <fieldset class="button-field"><legend>Tipo de caja</legend><input type="hidden" name="boxType" value="X8"><div id="boxTypeChoices" class="button-choices"><button type="button" class="select-button selected" data-value="X8" aria-pressed="true">X8</button><button type="button" class="select-button" data-value="X16" aria-pressed="false">X16</button></div></fieldset>
+          <label>Usuario de referencia (CC)<input name="cedula" inputmode="numeric" placeholder="Número de cédula" required></label>
+          <label>Nombre del cliente<input name="customerName" placeholder="Nombre completo" required></label>
+          <label>Dirección<input name="address" placeholder="Dirección" required></label>
+          <label>Barrio<input name="neighborhood" placeholder="Barrio" required></label>
+          <fieldset class="ports-field full-width"><legend>Puerto donde se coloca el splitter</legend><div id="portChoices" class="button-choices port-choices"></div></fieldset>
+          <label>Potencia del cliente antes del splitter<input name="powerBefore" placeholder="Ej. -21.37 dBm / -23.73 dBm (981 m)"></label>
+          <label>Potencia del cliente después del splitter<input name="powerAfter" placeholder="Ej. -25.53 dBm / -27.85 dBm (1166 m)"></label>
+          <label>Asesor<input name="advisor" placeholder="Nombre del asesor" required></label>
+          <label>Técnico<input name="technician" placeholder="Nombre del técnico" required></label>
+          <fieldset class="button-field full-width"><legend>¿Cuántos splitters hay en la caja antes de autorizar este?</legend><input type="hidden" name="splittersExisting" value="0"><div id="splitterCountChoices" class="button-choices"></div></fieldset>
+          <fieldset class="button-field full-width"><legend>Splitter que se va a colocar</legend><input type="hidden" name="splitterOrdinalChoice" value="1"><div id="splitterOrdinalChoices" class="button-choices"></div></fieldset>
+          <label class="full-width">Link ONU<input name="onuLink" type="url" placeholder="https://intercolwisp.smartolt.com/onu/view/..."></label>
+          <label class="full-width">Links de fotos de potencia / evidencia<textarea name="photoLinks" rows="2" placeholder="Pega aquí uno o varios enlaces a las fotos"></textarea></label>
+          <label class="full-width">Observaciones adicionales<textarea name="comments" rows="3" placeholder="Notas adicionales o comentarios"></textarea></label>
+        </div>
+        <div id="highPowerFields" class="form-grid" hidden>
+          <label>Cliente<input name="highCustomerName" placeholder="Nombre del cliente" required></label>
+          <label>Cédula<input name="highCedula" inputmode="numeric" placeholder="Número de cédula" required></label>
+          <label class="full-width">Dirección<input name="highAddress" placeholder="Dirección" required></label>
+          <label>Barrio<input name="highNeighborhood" placeholder="Barrio" required></label>
+          <label>Red<input name="network" placeholder="Ej. FAMILIA CANTILLO"></label>
+          <label>Clave<input name="networkKey" placeholder="Clave"></label>
+          <label>Ticket<input name="ticket" placeholder="Número de ticket"></label>
+          <fieldset class="button-field"><legend>¿Pagó?</legend><input type="hidden" name="paid" value="Sí"><div id="paidChoices" class="button-choices"></div></fieldset>
+          <label>¿A quién pagó? (opcional)<input name="paidTo" placeholder="Ej. al técnico"></label>
+          <label>Técnico<input name="highTechnician" placeholder="Nombre del técnico" required></label>
+          <label class="full-width">Link<input name="highLink" type="url" placeholder="Enlace ONU"></label>
+          <label class="full-width">Anotación<textarea name="highAnnotation" rows="3" placeholder="Notas adicionales o comentarios"></textarea></label>
+          <fieldset class="button-field full-width"><legend>¿Cuántos splitters hay en la caja antes de autorizar este?</legend><input type="hidden" name="highSplittersExisting" value="0"><div id="highSplitterCountChoices" class="button-choices"></div></fieldset>
+          <fieldset class="button-field full-width"><legend>Splitter que se va a colocar</legend><input type="hidden" name="highSplitterOrdinalChoice" value="1"><div id="highSplitterOrdinalChoices" class="button-choices"></div></fieldset>
+          <fieldset class="ports-field full-width"><legend>Puerto donde se coloca el splitter</legend><div id="highPortChoices" class="button-choices port-choices"></div></fieldset>
+          <label class="full-width">Asesor<input name="highAdvisor" placeholder="Nombre del asesor" required></label>
+        </div>
+      </form>
+      <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>

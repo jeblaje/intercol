@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verificar Caja · INTERCOL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="section-app">
+    <header class="section-heading">
+      <div><span class="kicker">CONTROL DE INSTALACIÓN</span><h1>Verificar Caja</h1><p>Registra los datos de la caja y las cédulas por puerto.</p></div>
+      <span class="status-chip"><i></i><span id="statusText">Caja sin iniciar</span></span>
+    </header>
+
+    <div class="verification-layout">
+      <section class="card general-card" aria-labelledby="generalTitle">
+        <header class="card-header"><div class="step">01</div><div><h2 id="generalTitle">Datos de la caja</h2><p>Información de la visita y del equipo.</p></div></header>
+        <form id="boxForm" class="card-body">
+          <label for="boxDate">Fecha</label><input id="boxDate" name="date" type="date" required>
+          <fieldset class="type-field"><legend>Tipo de caja</legend><div class="choice-group"><label class="choice"><input type="radio" name="boxType" value="x8" checked><span>x8</span></label><label class="choice"><input type="radio" name="boxType" value="x16"><span>x16</span></label></div></fieldset>
+          <label for="boxNumber">Número de caja</label><input id="boxNumber" name="boxNumber" type="text" placeholder="Ej. 102 o Sin número" required>
+          <label for="address">Dirección</label><input id="address" name="address" type="text" placeholder="Dirección de la caja" required>
+          <label for="technician">Técnico</label><input id="technician" name="technician" type="text" placeholder="Nombre del técnico" required>
+          <label for="advisor">Asesor</label><input id="advisor" name="advisor" type="text" placeholder="Nombre del asesor" required>
+          <p class="form-hint">El tipo x8 o x16 identifica la caja. Puedes agregar más cédulas que puertos nominales.</p>
+        </form>
+      </section>
+
+      <section class="card users-card" aria-labelledby="usersTitle">
+        <header class="card-header users-header"><div class="step">02</div><div class="users-title"><h2 id="usersTitle">Cédulas por puerto</h2><p>Agrega las identificaciones en el orden indicado por el técnico.</p></div><div class="header-actions"><span class="count-badge" id="userCount">0 cédulas</span><button type="button" class="secondary" id="openAllOnus" disabled>↗ Todas las ONU</button><button type="button" class="secondary" id="clearUsers">Limpiar todo</button><span id="popupStatus" class="popup-status" role="status" aria-live="polite"></span></div></header>
+        <div class="card-body">
+          <form id="userForm" class="add-user-form"><label class="sr-only" for="cedula">Identificación del usuario</label><input id="cedula" type="text" autocomplete="off" placeholder="Cédula o dirección que identifica el puerto" required><button class="primary" type="submit">＋ Agregar</button></form>
+          <p class="inline-error" id="inlineError" role="alert"></p>
+          <div class="user-workspace">
+            <div class="user-list-wrap"><div class="list-label">CÉDULAS REGISTRADAS</div><ol id="userList" class="user-list"></ol><div id="emptyUsers" class="empty-state"><span>＋</span><strong>Aún no hay cédulas</strong><p>La primera identificación quedará en el puerto 1.</p></div></div>
+            <aside class="detail-panel" id="detailPanel"><div class="detail-placeholder"><span class="detail-icon">⌕</span><strong>Selecciona una cédula</strong><p>Aquí verás el puerto asignado y los accesos a los detalles del usuario.</p></div></aside>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card export-card" aria-labelledby="exportTitle">
+      <header class="card-header"><div class="step">03</div><div><h2 id="exportTitle">Copiar a la hoja de cajas</h2><p>Prepara una fila por puerto, en el orden de las columnas de tu Excel.</p></div></header>
+      <div class="card-body export-body">
+        <div class="export-actions"><button type="button" class="primary" id="copySheet" disabled>Copiar bloque con formato</button><span id="copyStatus" class="copy-status" role="status" aria-live="polite">Completa los datos de la caja y agrega las cédulas.</span></div>
+        <p class="form-hint">Pega en la primera celda del bloque vacío. La x16 se copia como puertos 1–8, dos filas vacías y otra vez 1–8. En pantalla se conserva el orden de la lista del técnico y se muestra aparte el puerto real. Marca la casilla de un registro para colorear de naranja su celda de comentario al copiar.</p>
+      </div>
+    </section>
+
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
+
+
+
+
+
+
