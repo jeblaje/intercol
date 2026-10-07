@@ -62,7 +62,7 @@ service cloud.firestore {
         && request.resource.data.uid == advisorUid
         && request.resource.data.rol == 'asesor'
         && request.resource.data.keys().hasOnly(['uid', 'asesor', 'usuario', 'rol', 'creadoEn']);
-      allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid);
+      allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid) || hasSectionPermission('roles-permisos', 'ver');
       allow update: if isSystemAdmin()
         && request.resource.data.rol is string
         && exists(/databases/$(database)/documents/rolesAsesores/$(request.resource.data.rol))
@@ -71,11 +71,18 @@ service cloud.firestore {
     }
     match /rolesAsesores/{roleId} {
       allow read: if signedIn();
-      allow create, update: if isSystemAdmin()
+      allow create: if (roleId != 'administrador' || isSystemAdmin())
+        && hasSectionPermission('roles-permisos', 'crear')
         && request.resource.data.nombre is string
         && request.resource.data.permisos is map
         && request.resource.data.keys().hasOnly(['nombre', 'permisos', 'creadoPor', 'actualizadoPor', 'actualizadoEn']);
-      allow delete: if isSystemAdmin() && roleId != 'asesor';
+      allow update: if (roleId != 'administrador' || isSystemAdmin())
+        && hasSectionPermission('roles-permisos', 'editar')
+        && request.resource.data.nombre is string
+        && request.resource.data.permisos is map
+        && request.resource.data.actualizadoPor == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'permisos', 'actualizadoPor', 'actualizadoEn']);
+      allow delete: if !(roleId in ['asesor', 'administrador']) && hasSectionPermission('roles-permisos', 'eliminar');
     }
     match /permisosAsesores/{advisorUid} {
       allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid);

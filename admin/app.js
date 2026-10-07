@@ -1,11 +1,12 @@
 const ADMIN_EMAIL = "jeblaje@intercol-784d9.firebaseapp.com";
 const views = { dashboard: "Dashboard", advisors: "Asesores", sections: "Secciones", permissions: "Roles y permisos" };
-const state = { firebase: null, user: null, profile: null, advisors: [], roles: [], view: "dashboard", selectedAdvisor: "", selectedRole: "asesor", roleDraft: false, busy: false };
+const state = { firebase: null, user: null, profile: null, advisors: [], roles: [], view: "dashboard", selectedAdvisor: "", selectedRole: "asesor", roleDraft: false, roleEditorOpen: false, expandedRoleId: "", busy: false, isSystemAdmin: false, roleAdminPermissions: {} };
 const $ = selector => document.querySelector(selector);
 const host = $("#adminView");
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])); }
 function listSections() { return (window.INTERCOL_SECTIONS || []).filter(section => !section.hideFromLists && section.id !== "acceso"); }
-function listPermissionSections() { return listSections().filter(section => section.requiresAuth); }
+function listPermissionSections() { return [...listSections().filter(section => section.requiresAuth), { id: "roles-permisos", name: "Roles y permisos", description: "Administrar roles y sus permisos." }]; }
+function canManageRoles(action) { return state.isSystemAdmin || state.roleAdminPermissions[action] === true; }
 function currentView() { const key = location.hash.slice(1); return views[key] ? key : "dashboard"; }
 function setStatus(text, error = false) { const status = $("#adminStatus"); status.classList.toggle("is-error", error); status.innerHTML = `<span class="status-dot"></span>${escapeHtml(text)}`; }
 function renderLogin() {
@@ -23,7 +24,7 @@ function renderUnauthorized() {
   host.innerHTML = `<section class="empty-panel access-denied"><div class="empty-icon">⛨</div><span class="eyebrow">ACCESO RESTRINGIDO</span><h2>Esta cuenta no administra el sistema</h2><p>UID de esta cuenta:</p><code class="uid-copy">${escapeHtml(state.user?.uid || "")}</code><button class="secondary-button" id="copyUid" type="button">Copiar UID</button><p class="inline-status" id="copyStatus" role="status"></p></section>`;
   $("#copyUid").addEventListener("click", async () => { try { await navigator.clipboard.writeText(state.user.uid); $("#copyStatus").textContent = "UID copiado."; } catch { $("#copyStatus").textContent = state.user.uid; } });
 }
-function updateNav() { document.querySelectorAll("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === state.view)); $("#adminPageTitle").textContent = views[state.view]; }
+function updateNav() { document.querySelectorAll("[data-view]").forEach(button => { button.classList.toggle("active", button.dataset.view === state.view); if (button.dataset.view === "advisors") button.hidden = !state.isSystemAdmin; }); $("#adminPageTitle").textContent = views[state.view]; }
 function dashboardView() {
   host.innerHTML = `<section class="welcome-card"><div class="welcome-mark">I</div><div><span class="eyebrow">ESPACIO DE ADMINISTRACIÓN</span><h2>Bienvenido al panel de INTERCOL</h2><p>Administra las cuentas, las secciones y los roles de acceso.</p></div></section><section class="metrics-grid" aria-label="Resumen de administración"><article class="metric-card"><span class="metric-icon purple">♙</span><div><span>Asesores</span><strong>${state.advisors.length}</strong></div><small>Perfiles cargados desde Firebase</small></article><article class="metric-card"><span class="metric-icon blue">▣</span><div><span>Secciones</span><strong>${listSections().length}</strong></div><small>Módulos registrados en INTERCOL</small></article><article class="metric-card"><span class="metric-icon amber">⚿</span><div><span>Roles</span><strong>${state.roles.length}</strong></div><small>Permisos compartidos por rol</small></article></section><section class="quick-grid"><button class="quick-card" type="button" data-go="advisors"><span class="quick-icon purple">♙</span><strong>Administrar asesores</strong><small>Asignar un rol a cada asesor</small><span class="quick-arrow">→</span></button><button class="quick-card" type="button" data-go="sections"><span class="quick-icon blue">▣</span><strong>Consultar secciones</strong><small>Ver los módulos disponibles</small><span class="quick-arrow">→</span></button><button class="quick-card" type="button" data-go="permissions"><span class="quick-icon amber">⚿</span><strong>Administrar roles</strong><small>Definir permisos por rol</small><span class="quick-arrow">→</span></button></section>`;
   host.querySelectorAll("[data-go]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.go)));
@@ -59,35 +60,63 @@ function bindPermissionControls() {
 function permissionRows(permissions = {}) {
   return listPermissionSections().map(section => `<tr><th><strong>${escapeHtml(section.name)}</strong><small>${escapeHtml(section.description || "")}</small></th>${permissionLabels.map(([key,label]) => `<td><label class="permission-check" aria-label="${escapeHtml(label)} ${escapeHtml(section.name)}"><input type="checkbox" data-section="${escapeHtml(section.id)}" data-action="${key}" ${permissions[section.id]?.[key] ? "checked" : ""}><span>${label}</span></label></td>`).join("")}</tr>`).join("");
 }
+function rolePermissionSummary(role) {
+  return listPermissionSections().map(section => {
+    const enabled = permissionLabels.filter(([key]) => role.permisos?.[section.id]?.[key]).map(([, label]) => label);
+    return `<div class="role-permission-summary"><strong>${escapeHtml(section.name)}</strong><span>${enabled.length ? enabled.map(label => `<i class="role-permission-chip">${escapeHtml(label)}</i>`).join("") : '<i class="role-permission-none">Sin permisos</i>'}</span></div>`;
+  }).join("");
+}
+function rolePermissionDetails(role) {
+  return `<div class="role-permission-details">${listPermissionSections().map(section => `<div class="role-detail-row"><div><strong>${escapeHtml(section.name)}</strong><small>${escapeHtml(section.description || "")}</small></div><div>${permissionLabels.map(([key, label]) => `<span class="role-detail-action ${role.permisos?.[section.id]?.[key] ? "allowed" : "denied"}">${escapeHtml(label)} ${role.permisos?.[section.id]?.[key] ? "✓" : "—"}</span>`).join("")}</div></div>`).join("")}</div>`;
+}
 function rolesView() {
   const role = state.roles.find(item => item.id === state.selectedRole) || null;
   if (!role && !state.roleDraft && state.roles.length) state.selectedRole = state.roles[0].id;
   const selectedRole = state.roles.find(item => item.id === state.selectedRole) || null;
   const permissions = selectedRole?.permisos || {};
-  const assigned = selectedRole && state.advisors.some(advisor => (advisor.rol || "asesor") === selectedRole.id);
-  host.innerHTML = `<section class="view-heading"><div><span class="eyebrow">CONTROL DE ACCESO</span><h2>Roles y permisos</h2><p>Define permisos una sola vez por rol y luego asigna ese rol a los asesores.</p></div></section><section class="data-panel permission-panel"><div class="panel-toolbar role-toolbar"><label for="roleSelector">Rol</label><select id="roleSelector"><option value="" ${state.roleDraft ? "selected" : ""}>Nuevo rol…</option>${state.roles.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === state.selectedRole && !state.roleDraft ? "selected" : ""}>${escapeHtml(item.nombre || item.id)}</option>`).join("")}</select><label for="roleName">Nombre</label><input id="roleName" type="text" value="${escapeHtml(state.roleDraft ? "" : selectedRole?.nombre || "")}" placeholder="Ej. Supervisor"><button class="secondary-button" id="newRole" type="button">Nuevo rol</button><span class="toolbar-spacer"></span><button class="secondary-button danger-button" id="deleteRole" type="button" ${!selectedRole || selectedRole.id === "asesor" || assigned ? "disabled" : ""}>Eliminar rol</button><button class="primary-button" id="saveRole" type="button">Guardar rol</button></div><div class="table-wrap"><table><thead><tr><th><label class="bulk-check"><input type="checkbox" id="permissionSelectAll"><span>Todas las secciones y permisos</span></label></th>${permissionLabels.map(([key,label]) => `<th><label class="bulk-check" title="Aplicar ${label} a todas las secciones"><input type="checkbox" data-select-action="${key}"><span>${label}</span></label></th>`).join("")}</tr></thead><tbody>${permissionRows(permissions) || `<tr><td colspan="5"><div class="table-empty">Aún no hay secciones con inicio de sesión.</div></td></tr>`}</tbody></table></div><p class="role-help">Las secciones públicas no necesitan configuración de roles. El rol Asesor se asigna automáticamente al registrarse. No se puede eliminar mientras haya asesores asignados.</p><p id="roleStatus" class="inline-status" role="status"></p></section>`;
-  $("#roleSelector").addEventListener("change", event => { state.roleDraft = event.target.value === ""; state.selectedRole = event.target.value; rolesView(); });
-  $("#newRole").addEventListener("click", () => { state.roleDraft = true; state.selectedRole = ""; rolesView(); $("#roleName").focus(); });
-  bindPermissionControls();
-  $("#saveRole").addEventListener("click", saveRole);
-  $("#deleteRole").addEventListener("click", deleteRole);
+  const cards = state.roles.map(item => {
+    const assignedCount = state.advisors.filter(advisor => (advisor.rol || "asesor") === item.id).length;
+    const expanded = state.expandedRoleId === item.id;
+    const cannotDeleteAssigned = assignedCount > 0 && !state.isSystemAdmin;
+    const isDefaultRole = ["asesor", "administrador"].includes(item.id);
+    return `<article class="role-card"><header class="role-card-header"><div><span class="role-card-kicker">${isDefaultRole ? "ROL PREDETERMINADO" : "ROL PERSONALIZADO"}</span><h3>${escapeHtml(item.nombre || item.id)}</h3><small>${assignedCount} asesor${assignedCount === 1 ? " asignado" : "es asignados"}</small></div><span class="role-key">${escapeHtml(item.id)}</span></header><div class="role-card-permissions">${rolePermissionSummary(item)}</div>${expanded ? rolePermissionDetails(item) : ""}<footer class="role-card-actions"><button class="table-button" type="button" data-view-role="${escapeHtml(item.id)}">${expanded ? "Ocultar detalle" : "Ver"}</button><button class="table-button" type="button" data-edit-role="${escapeHtml(item.id)}" ${canManageRoles("editar") && (item.id !== "administrador" || state.isSystemAdmin) ? "" : "disabled title=\"No tienes permiso para editar este rol\""}>Editar</button><button class="table-button danger-button" type="button" data-delete-role="${escapeHtml(item.id)}" ${isDefaultRole || !canManageRoles("eliminar") || (!state.isSystemAdmin && !state.roleAdminPermissions.ver) || cannotDeleteAssigned ? `disabled title="${isDefaultRole ? "Los roles predeterminados no se pueden eliminar" : cannotDeleteAssigned ? "Solo el administrador puede eliminar roles asignados" : !state.isSystemAdmin && !state.roleAdminPermissions.ver ? "Necesitas permiso para ver asesores antes de eliminar roles" : "No tienes permiso para eliminar roles"}"` : ""}>Eliminar</button></footer></article>`;
+  }).join("");
+  const editor = state.roleEditorOpen ? `<section class="data-panel permission-panel role-editor-panel"><div class="panel-toolbar role-toolbar"><div><span class="eyebrow">${state.roleDraft ? "CREAR ROL" : "EDITAR ROL"}</span><strong>${state.roleDraft ? "Nuevo rol" : escapeHtml(selectedRole?.nombre || "Rol")}</strong></div><label for="roleName">Nombre</label><input id="roleName" type="text" value="${escapeHtml(state.roleDraft ? "" : selectedRole?.nombre || "")}" placeholder="Ej. Supervisor"><span class="toolbar-spacer"></span><button class="secondary-button" id="cancelRoleEdit" type="button">Cancelar</button><button class="primary-button" id="saveRole" type="button">Guardar rol</button></div><div class="table-wrap"><table><thead><tr><th><label class="bulk-check"><input type="checkbox" id="permissionSelectAll"><span>Todas las secciones y permisos</span></label></th>${permissionLabels.map(([key,label]) => `<th><label class="bulk-check" title="Aplicar ${label} a todas las secciones"><input type="checkbox" data-select-action="${key}"><span>${label}</span></label></th>`).join("")}</tr></thead><tbody>${permissionRows(permissions) || `<tr><td colspan="5"><div class="table-empty">Aún no hay secciones protegidas en el catálogo.</div></td></tr>`}</tbody></table></div><p class="role-help">No se puede eliminar un rol mientras haya asesores asignados. El rol Asesor no se puede eliminar.</p></section>` : "";
+  host.innerHTML = `<section class="view-heading"><div><span class="eyebrow">CONTROL DE ACCESO</span><h2>Roles y permisos</h2><p>Consulta los permisos de cada rol y edítalos desde su tarjeta.</p></div>${canManageRoles("crear") ? '<button class="primary-button" id="newRole" type="button">＋ Nuevo rol</button>' : ""}</section><div class="role-card-grid">${cards || '<div class="empty-panel"><strong>Aún no hay roles.</strong></div>'}</div><p id="rolesActionStatus" class="inline-status" role="status"></p>${editor}`;
+  host.querySelectorAll("[data-view-role]").forEach(button => button.addEventListener("click", () => { state.expandedRoleId = state.expandedRoleId === button.dataset.viewRole ? "" : button.dataset.viewRole; rolesView(); }));
+  host.querySelectorAll("[data-edit-role]").forEach(button => button.addEventListener("click", () => { state.selectedRole = button.dataset.editRole; state.roleDraft = false; state.roleEditorOpen = true; rolesView(); $("#roleName").focus(); }));
+  host.querySelectorAll("[data-delete-role]").forEach(button => button.addEventListener("click", () => { state.selectedRole = button.dataset.deleteRole; deleteRole(); }));
+  $("#newRole")?.addEventListener("click", () => { state.roleDraft = true; state.selectedRole = ""; state.roleEditorOpen = true; rolesView(); $("#roleName").focus(); });
+  if (state.roleEditorOpen) {
+    bindPermissionControls();
+    $("#saveRole").addEventListener("click", saveRole);
+    $("#cancelRoleEdit").addEventListener("click", () => { state.roleDraft = false; state.roleEditorOpen = false; rolesView(); });
+  }
 }
-function render() { updateNav(); if (state.view === "dashboard") dashboardView(); else if (state.view === "advisors") advisorsView(); else if (state.view === "sections") sectionsView(); else rolesView(); }
-function navigate(view) { if (!views[view]) return; if (location.hash !== `#${view}`) location.hash = view; else { state.view = view; render(); } }
+function render() { if (state.view === "advisors" && !state.isSystemAdmin) state.view = "dashboard"; if (state.view === "permissions" && !canManageRoles("ver")) state.view = "dashboard"; updateNav(); if (state.view === "dashboard") dashboardView(); else if (state.view === "advisors") advisorsView(); else if (state.view === "sections") sectionsView(); else rolesView(); }
+function navigate(view) { if (!views[view]) return; if (view === "advisors" && !state.isSystemAdmin) return; if (view === "permissions" && !canManageRoles("ver")) return; if (location.hash !== `#${view}`) location.hash = view; else { state.view = view; render(); } }
 async function loadData() {
   setStatus("Cargando datos…");
   let loadStep = "leer el catálogo de roles";
   try {
-    const defaults = Object.fromEntries(listPermissionSections().map(section => [section.id, { ver: true, crear: true, editar: true, eliminar: false }]));
-    loadStep = "crear o leer el rol Asesor";
-    await state.firebase.ensureAdvisorRole("asesor", "Asesor", defaults, state.user.uid);
-    loadStep = "leer asesores, roles y permisos";
-    const [advisors, roles, legacyPermissions] = await Promise.all([state.firebase.listAdvisorProfiles(), state.firebase.listAdvisorRoles(), state.firebase.listAdvisorSectionPermissions()]);
+    const defaults = Object.fromEntries(listPermissionSections().map(section => [section.id, section.id === "roles-permisos" ? { ver: false, crear: false, editar: false, eliminar: false } : { ver: true, crear: true, editar: true, eliminar: false }]));
+    if (state.isSystemAdmin) {
+      loadStep = "crear o leer el rol Asesor";
+      await state.firebase.ensureAdvisorRole("asesor", "Asesor", defaults, state.user.uid);
+      loadStep = "crear o leer el rol Administrador";
+      await state.firebase.ensureAdvisorRole("administrador", "Administrador", Object.fromEntries(listPermissionSections().map(section => [section.id, { ver: true, crear: true, editar: true, eliminar: true }])), state.user.uid);
+    }
+    loadStep = "leer roles y asesores";
+    const [advisors, roles, legacyPermissions] = await Promise.all([
+      state.isSystemAdmin || state.roleAdminPermissions.ver ? state.firebase.listAdvisorProfiles() : Promise.resolve([]),
+      state.firebase.listAdvisorRoles(),
+      state.isSystemAdmin ? state.firebase.listAdvisorSectionPermissions() : Promise.resolve([])
+    ]);
     const knownRoles = new Map(roles.map(role => [role.id, role]));
     const legacyByAdvisor = new Map(legacyPermissions.map(item => [item.id, item]));
     state.advisors = advisors;
     loadStep = "migrar asignaciones de roles existentes";
-    for (const advisor of state.advisors) {
+    for (const advisor of state.isSystemAdmin ? state.advisors : []) {
       const legacy = legacyByAdvisor.get(advisor.id);
       if (advisor.rol && knownRoles.has(advisor.rol)) continue;
       if (!legacy?.permisos) { advisor.rol = "asesor"; continue; }
@@ -101,9 +130,22 @@ async function loadData() {
       await state.firebase.assignAdvisorRole(advisor.id, roleId, state.user.uid);
       advisor.rol = roleId;
     }
-    state.roles = await state.firebase.listAdvisorRoles();
+    state.roles = state.isSystemAdmin ? await state.firebase.listAdvisorRoles() : roles;
+    if (state.isSystemAdmin) {
+      const adminRole = state.roles.find(role => role.id === "administrador");
+      const adminPermissions = Object.fromEntries(listPermissionSections().map(section => [section.id, { ver: true, crear: true, editar: true, eliminar: true }]));
+      if (adminRole && (adminRole.nombre !== "Administrador" || JSON.stringify(adminRole.permisos) !== JSON.stringify(adminPermissions))) {
+        await state.firebase.saveAdvisorRole("administrador", "Administrador", adminPermissions, state.user.uid);
+        adminRole.nombre = "Administrador"; adminRole.permisos = adminPermissions;
+      }
+      const adminAdvisor = state.advisors.find(advisor => advisor.id === state.user.uid);
+      if (adminAdvisor && adminAdvisor.rol !== "administrador") {
+        await state.firebase.assignAdvisorRole(adminAdvisor.id, "administrador", state.user.uid);
+        adminAdvisor.rol = "administrador";
+      }
+    }
     loadStep = "completar permisos predeterminados del rol Asesor";
-    const advisorRole = state.roles.find(role => role.id === "asesor");
+    const advisorRole = state.isSystemAdmin ? state.roles.find(role => role.id === "asesor") : null;
     if (advisorRole) {
       const completedPermissions = { ...(advisorRole.permisos || {}) };
       let permissionsChanged = false;
@@ -134,31 +176,54 @@ async function loadData() {
 }
 function slugifyRole(name) { return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 async function saveRole() {
-  if (state.busy) return; const button = $("#saveRole"); const status = $("#roleStatus"); const name = $("#roleName").value.trim(); const existing = state.roles.find(item => item.id === state.selectedRole);
+  if (state.busy) return; const button = $("#saveRole"); const status = $("#rolesActionStatus"); const name = $("#roleName").value.trim(); const existing = state.roles.find(item => item.id === state.selectedRole);
+  if (!canManageRoles(existing ? "editar" : "crear") || (existing?.id === "administrador" && !state.isSystemAdmin)) { status.textContent = `No tienes permiso para ${existing ? "editar" : "crear"} este rol.`; return; }
   if (!name) { status.textContent = "Escribe el nombre del rol."; return; }
   const roleId = existing ? existing.id : slugifyRole(name);
   if (!roleId) { status.textContent = "El nombre del rol debe incluir letras o números."; return; }
   if (!existing && state.roles.some(item => item.id === roleId)) { status.textContent = "Ya existe un rol con ese nombre."; return; }
   const permissions = {}; host.querySelectorAll("input[data-section][data-action]").forEach(input => { permissions[input.dataset.section] ||= { ver: false, crear: false, editar: false, eliminar: false }; permissions[input.dataset.section][input.dataset.action] = input.checked; });
   state.busy = true; button.disabled = true; status.textContent = "Guardando permisos del rol…";
-  try { await state.firebase.saveAdvisorRole(roleId, name, permissions, state.user.uid); const updated = { id: roleId, nombre: name, permisos: permissions }; const index = state.roles.findIndex(item => item.id === roleId); if (index < 0) state.roles.push(updated); else state.roles[index] = { ...state.roles[index], ...updated }; state.selectedRole = roleId; state.roleDraft = false; status.textContent = "Rol guardado."; rolesView(); $("#roleStatus").textContent = "Rol guardado."; }
+  try { await state.firebase.saveAdvisorRole(roleId, name, permissions, state.user.uid); const updated = { id: roleId, nombre: name, permisos: permissions }; const index = state.roles.findIndex(item => item.id === roleId); if (index < 0) state.roles.push(updated); else state.roles[index] = { ...state.roles[index], ...updated }; state.selectedRole = roleId; state.roleDraft = false; state.roleEditorOpen = false; rolesView(); $("#rolesActionStatus").textContent = "Rol guardado."; }
   catch (error) { console.error("No se pudo guardar el rol:", error); status.textContent = error?.code === "permission-denied" ? "Firestore denegó guardar el rol (permission-denied). Confirma que publicaste las reglas en el proyecto intercol-784d9 y que tu cuenta es la administradora autorizada." : `No se pudo guardar el rol (${error?.code || "error"}): ${error?.message || "Revisa la conexión."}`; }
   finally { state.busy = false; if ($("#saveRole")) $("#saveRole").disabled = false; }
 }
 async function deleteRole() {
-  const role = state.roles.find(item => item.id === state.selectedRole); const status = $("#roleStatus");
-  if (!role || role.id === "asesor") return;
-  if (state.advisors.some(advisor => (advisor.rol || "asesor") === role.id)) { status.textContent = "Primero asigna otro rol a los asesores que lo usan."; return; }
-  if (!confirm(`¿Eliminar el rol “${role.nombre || role.id}”?`)) return;
-  try { await state.firebase.deleteAdvisorRole(role.id); state.roles = state.roles.filter(item => item.id !== role.id); state.selectedRole = "asesor"; rolesView(); $("#roleStatus").textContent = "Rol eliminado."; }
+  const role = state.roles.find(item => item.id === state.selectedRole); const status = $("#rolesActionStatus");
+  if (!role || ["asesor", "administrador"].includes(role.id) || !canManageRoles("eliminar") || (!state.isSystemAdmin && !state.roleAdminPermissions.ver)) return;
+  const assignedAdvisors = state.advisors.filter(advisor => (advisor.rol || "asesor") === role.id);
+  if (assignedAdvisors.length && !state.isSystemAdmin) { status.textContent = "Solo el administrador puede eliminar roles asignados a asesores."; return; }
+  const confirmText = assignedAdvisors.length
+    ? `¿Eliminar el rol “${role.nombre || role.id}”? Los ${assignedAdvisors.length} asesor(es) asignados pasarán al rol Asesor.`
+    : `¿Eliminar el rol “${role.nombre || role.id}”?`;
+  if (!confirm(confirmText)) return;
+  try {
+    for (const advisor of assignedAdvisors) {
+      await state.firebase.assignAdvisorRole(advisor.id, "asesor", state.user.uid);
+      advisor.rol = "asesor";
+    }
+    await state.firebase.deleteAdvisorRole(role.id);
+    state.roles = state.roles.filter(item => item.id !== role.id);
+    state.selectedRole = "asesor"; state.roleEditorOpen = false; state.roleDraft = false;
+    if (state.expandedRoleId === role.id) state.expandedRoleId = "";
+    rolesView(); $("#rolesActionStatus").textContent = "Rol eliminado. Los asesores asignados quedaron con el rol Asesor.";
+  }
   catch (error) { console.error("No se pudo eliminar el rol:", error); status.textContent = error.code === "permission-denied" ? "Firebase no autorizó eliminar este rol." : "No se pudo eliminar el rol."; }
 }
 async function handleUser(user) {
-  state.user = user || null; state.profile = null;
+  state.user = user || null; state.profile = null; state.isSystemAdmin = false; state.roleAdminPermissions = {};
   if (!user) { setStatus("Inicia sesión para continuar"); renderLogin(); return; }
   $("#adminSignOut").hidden = false;
-  if (String(user.email || "").toLowerCase() !== ADMIN_EMAIL) { setStatus("Cuenta pendiente de autorización", true); renderUnauthorized(); return; }
+  state.isSystemAdmin = String(user.email || "").toLowerCase() === ADMIN_EMAIL;
   try { state.profile = await state.firebase.getAdvisorProfile(user.uid); } catch { state.profile = null; }
+  if (!state.isSystemAdmin && state.profile) {
+    try {
+      const roleId = state.profile.rol || "asesor";
+      const role = await state.firebase.getAdvisorRolePermissions(roleId);
+      state.roleAdminPermissions = role?.permisos?.["roles-permisos"] || {};
+    } catch (error) { console.error("No se pudieron cargar permisos de administración de roles:", error); }
+  }
+  if (!state.isSystemAdmin && !state.roleAdminPermissions.ver) { setStatus("Cuenta sin permisos para administrar roles", true); renderUnauthorized(); return; }
   state.view = currentView(); await loadData();
 }
 function boot() {
