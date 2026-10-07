@@ -140,7 +140,7 @@ userForm.addEventListener("submit", event => {
   const occupiedPorts = new Set(users.map(user => portFor(user)));
   let port = 1;
   while (occupiedPorts.has(port) && port <= maxPort) port += 1;
-  if (port > maxPort) port = listOrder;
+  if (port > maxPort) port = ((listOrder - 1) % maxPort) + 1;
   const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false };
   users.push(user);
   cedulaInput.value = "";
@@ -280,6 +280,7 @@ renderList();
 if (selectedId) selectUser(selectedId);
 window.addEventListener("load", resizeSection);
 setTimeout(resizeSection, 80);
+
 
 
 

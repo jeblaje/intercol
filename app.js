@@ -1,11 +1,13 @@
 const THEME_KEY = "intercol_theme_v2";
 const VIEW_KEY = "intercol_active_view_v1";
-const TEMP_MESSAGES_KEY = "intercol_temporary_messages_v1";
+
 
 const state = {
   sections: Array.isArray(window.INTERCOL_SECTIONS) ? window.INTERCOL_SECTIONS : [],
   activeView: "dashboard",
   activeSectionId: null,
+  temporaryMessages: [],
+  temporaryMessagesError: "",
   theme: loadTheme()
 };
 
@@ -111,31 +113,24 @@ function renderDashboard() {
 }
 
 function readTemporaryMessages() {
-  try {
-    const data = JSON.parse(localStorage.getItem(TEMP_MESSAGES_KEY) || "[]");
-    return Array.isArray(data) ? data.filter((item) => item && typeof item.text === "string" && Number.isFinite(Date.parse(item.expiresAt))) : [];
-  } catch { return []; }
+  return state.temporaryMessages;
 }
 
 function renderDashboardMessages() {
   const list = $("#dashboardMessageList");
   if (!list) return;
   const now = Date.now();
-  const messages = readTemporaryMessages();
-  const active = messages.filter((message) => Date.parse(message.expiresAt) > now);
-  if (active.length !== messages.length) {
-    try { localStorage.setItem(TEMP_MESSAGES_KEY, JSON.stringify(active)); } catch { /* Keep dashboard usable if storage is unavailable. */ }
-  }
+  const active = readTemporaryMessages().filter(message => Date.parse(message.expiresAt) > now);
   $("#dashboardMessageCount").textContent = `${active.length} mensaje${active.length === 1 ? " vigente" : "s vigentes"}`;
   list.replaceChildren();
   if (!active.length) {
     const empty = document.createElement("p");
     empty.className = "dashboard-message-empty";
-    empty.textContent = "No hay mensajes vigentes. Puedes crear uno desde Administrar.";
+    empty.textContent = state.temporaryMessagesError || "No hay mensajes vigentes. Puedes crear uno desde Administrar.";
     list.appendChild(empty);
     return;
   }
-  active.sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt)).forEach((message) => {
+  active.sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt)).forEach(message => {
     const card = document.createElement("article");
     card.className = "dashboard-message";
     const messageHeader = document.createElement("div");
@@ -154,15 +149,8 @@ function renderDashboardMessages() {
         copy.title = "Mensaje copiado";
         copy.setAttribute("aria-label", "Mensaje copiado");
         copy.classList.add("copied");
-        window.setTimeout(() => {
-          copy.title = "Copiar mensaje";
-          copy.setAttribute("aria-label", "Copiar mensaje");
-          copy.classList.remove("copied");
-        }, 1500);
-      } catch {
-        copy.title = "No se pudo copiar";
-        copy.setAttribute("aria-label", "No se pudo copiar");
-      }
+        window.setTimeout(() => { copy.title = "Copiar mensaje"; copy.setAttribute("aria-label", "Copiar mensaje"); copy.classList.remove("copied"); }, 1500);
+      } catch { copy.title = "No se pudo copiar"; copy.setAttribute("aria-label", "No se pudo copiar"); }
     });
     const expiry = document.createElement("time");
     expiry.dateTime = message.expiresAt;
@@ -179,7 +167,6 @@ function renderDashboardMessages() {
     list.appendChild(card);
   });
 }
-
 function renderSections() {
   content.innerHTML = `
     <section class="hero">
@@ -260,9 +247,24 @@ window.addEventListener("message", (event) => {
   broadcastTheme();
 });
 
-window.addEventListener("storage", (event) => {
-  if (event.key === TEMP_MESSAGES_KEY && state.activeView === "dashboard") renderDashboardMessages();
-});
+let stopTemporaryMessageSync = null;
+function startTemporaryMessageSync() {
+  const firebase = window.INTERCOL_FIREBASE;
+  if (!firebase || stopTemporaryMessageSync) return;
+  stopTemporaryMessageSync = firebase.subscribeTemporaryMessages(messages => {
+    state.temporaryMessages = messages;
+    state.temporaryMessagesError = "";
+    if (state.activeView === "dashboard") renderDashboardMessages();
+  }, error => {
+    console.error("No se pudieron sincronizar los mensajes de Firestore:", error);
+    state.temporaryMessagesError = error.code === "permission-denied"
+      ? "Firestore no permite leer mensajes. Revisa las reglas de acceso de smsTemp."
+      : "No se pudieron cargar los mensajes. Comprueba la conexión con Firebase.";
+    if (state.activeView === "dashboard") renderDashboardMessages();
+  });
+}
+window.addEventListener("intercol-firebase-ready", startTemporaryMessageSync);
+startTemporaryMessageSync();
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 $("#themeToggle").addEventListener("click", toggleTheme);
@@ -280,6 +282,7 @@ if (savedView?.view === "section" && state.sections.some((section) => section.id
 } else {
   setView("dashboard");
 }
+
 
 
 
