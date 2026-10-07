@@ -216,3 +216,14 @@ h1 { margin: 4px 0 0; font-size: 22px; letter-spacing: -.02em; }
 .account-nav-button.is-signed-in .account-avatar { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); color: var(--danger); }
 .account-nav-button.is-signed-in .account-copy small { color: var(--danger); font-weight: 750; }
 .account-nav-button.is-signed-in:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, var(--surface)); }
+
+.invoice-alert-host{position:fixed;top:88px;right:24px;z-index:50;display:grid;gap:10px;width:min(390px,calc(100vw - var(--sidebar-width) - 36px));max-height:calc(100vh - 110px);overflow:auto}
+.invoice-alert-card{padding:15px;border:1px solid color-mix(in srgb,#dc2626 35%,var(--border));border-left:4px solid #dc2626;border-radius:13px;background:var(--surface);color:var(--text);box-shadow:0 14px 36px rgba(15,23,42,.18);animation:invoice-alert-enter .22s ease-out}
+.invoice-alert-card strong{display:block;font-size:13px}
+.invoice-alert-card p{margin:5px 0 12px;color:var(--muted);font-size:11px;line-height:1.5}
+.invoice-alert-actions{display:flex;gap:8px;flex-wrap:wrap}
+.invoice-alert-actions button,.invoice-alert-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font-size:10px;font-weight:750;text-decoration:none;cursor:pointer}
+.invoice-alert-actions .invoice-alert-open{border-color:#dc2626;background:#dc2626;color:#fff}
+.invoice-alert-actions .invoice-alert-link{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));color:var(--primary)}
+@keyframes invoice-alert-enter{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:700px){.invoice-alert-host{top:76px;right:10px;width:calc(100vw - 20px);max-height:45vh}}

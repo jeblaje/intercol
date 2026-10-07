@@ -40,10 +40,15 @@
           <label class="field-label" for="planAdvisor">Asesor</label><input id="planAdvisor" type="text" placeholder="Nombre del asesor">
         </div>
         <div id="reconnectionFields" class="record-fields" hidden>
+          <label class="field-label" for="reconnectionCustomerName">Nombre del usuario</label><input id="reconnectionCustomerName" type="text" placeholder="Nombre completo">
+          <label class="field-label" for="reconnectionCustomerId">Cédula</label><input id="reconnectionCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula">
           <fieldset class="payment-options"><legend>¿Qué paga?</legend><label><input id="paysMonth" type="checkbox"> Mes</label><label><input id="paysAdjustment" type="checkbox"> Reajuste</label></fieldset>
           <label class="field-label" for="reconnectionTechnician">Técnico</label><input id="reconnectionTechnician" type="text" placeholder="Nombre del técnico">
           <label class="field-label" for="paymentDay">Fecha de pago (día del mes)</label><input id="paymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 1">
           <label class="field-label" for="reconnectionAdvisor">Asesor</label><input id="reconnectionAdvisor" type="text" placeholder="Nombre del asesor">
+          <p class="invoice-reminder-hint">Programa la verificación de factura 10 días antes del día de pago.</p>
+          <button type="button" class="invoice-reminder-button" id="createInvoiceReminder">Guardar y abrir Generación de facturas</button>
+          <span id="invoiceReminderStatus" class="tool-status" role="status" aria-live="polite"></span>
         </div>
         <div id="creditFields" class="record-fields" hidden>
           <label class="field-label" for="invoiceNumber">Número de factura</label><input id="invoiceNumber" type="text" inputmode="numeric" placeholder="Ej. 507397">

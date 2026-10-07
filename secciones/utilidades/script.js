@@ -86,7 +86,7 @@ const recordOutput = document.querySelector("#recordOutput");
 const recordStatus = document.querySelector("#recordStatus");
 const recordControls = [
   "recordType", "planName", "planPrice", "planTechnician", "planAdvisor", "paysMonth",
-  "paysAdjustment", "reconnectionTechnician", "paymentDay", "reconnectionAdvisor",
+  "paysAdjustment", "reconnectionCustomerName", "reconnectionCustomerId", "reconnectionTechnician", "paymentDay", "reconnectionAdvisor",
   "invoiceNumber", "waitingDay", "creditAdvisor", "oldHolder", "newHolder", "holderAdvisor",
   "newPaymentDay", "paymentDateAdvisor"
 ].map(id => document.getElementById(id));
@@ -245,6 +245,25 @@ recordControls.forEach(control => {
   control.addEventListener("change", renderRecord);
 });
 document.querySelector("#copyRecord").addEventListener("click", () => copyValue(recordOutput, recordStatus));
+const createInvoiceReminderButton = document.querySelector("#createInvoiceReminder");
+const invoiceReminderStatus = document.querySelector("#invoiceReminderStatus");
+createInvoiceReminderButton.addEventListener("click", () => {
+  const customerName = document.querySelector("#reconnectionCustomerName").value.trim();
+  const customerId = document.querySelector("#reconnectionCustomerId").value.trim();
+  const paymentDay = Number(document.querySelector("#paymentDay").value);
+  if (!customerName || !customerId || !Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 31) {
+    invoiceReminderStatus.textContent = "Completa nombre, cédula y día de pago (1 a 31).";
+    return;
+  }
+  createInvoiceReminderButton.disabled = true;
+  invoiceReminderStatus.textContent = "Guardando y calculando el aviso…";
+  window.parent.postMessage({ type: "INTERCOL_CREATE_INVOICE_FROM_UTILITIES", customerName, customerId, paymentDay }, "*");
+});
+window.addEventListener("message", event => {
+  if (event.data?.type !== "INTERCOL_INVOICE_CREATE_RESULT") return;
+  createInvoiceReminderButton.disabled = false;
+  invoiceReminderStatus.textContent = event.data.message || (event.data.ok ? "Guardado." : "No se pudo guardar.");
+});
 document.querySelector("#clearRecord").addEventListener("click", () => {
   recordControls.forEach(control => {
     if (control.type === "checkbox") control.checked = false;

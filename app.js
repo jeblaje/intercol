@@ -11,6 +11,9 @@ const state = {
   currentUser: null,
   advisorProfile: null,
   pendingSectionId: null,
+  pendingInvoiceId: null,
+  invoiceNotifications: [],
+  invoiceToastStartedAt: new Map(),
   theme: loadTheme()
 };
 
@@ -242,6 +245,10 @@ function openSection(id) {
   frame.addEventListener("load", () => {
     broadcastTheme();
     frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile }, "*");
+    if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceId) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_INVOICE", id: state.pendingInvoiceId }, "*");
+      state.pendingInvoiceId = null;
+    }
     frame.contentWindow.scrollTo(0, 0);
   });
   window.scrollTo(0, 0);
@@ -269,18 +276,163 @@ function escapeAttribute(value) {
 
 window.addEventListener("message", (event) => {
   const frame = $("#sectionFrame");
+  if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_REQUEST_NOTIFICATIONS") {
+    const sendPermission = permission => frame.contentWindow.postMessage({ type: "INTERCOL_NOTIFICATIONS_PERMISSION", permission }, "*");
+    if (!("Notification" in window)) sendPermission("unsupported");
+    else Notification.requestPermission().then(permission => {
+      sendPermission(permission);
+      if (permission === "granted") fireInvoiceBrowserAlerts();
+    }).catch(() => sendPermission("denied"));
+    return;
+  }
   if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_SECTION_RESIZE") {
     frame.style.height = `${Math.max(420, Number(event.data.height) || 0)}px`;
     return;
   }
   if (event.source !== frame?.contentWindow) return;
+  if (event.data?.type === "INTERCOL_CREATE_INVOICE_FROM_UTILITIES") {
+    const { customerName, customerId, paymentDay } = event.data;
+    if (!state.currentUser || !state.advisorProfile) {
+      state.pendingSectionId = "utilidades";
+      openSection("acceso");
+      return;
+    }
+    const reminderDate = nextInvoiceReminderDate(paymentDay);
+    if (!reminderDate) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_INVOICE_CREATE_RESULT", ok: false, message: "El día de pago debe estar entre 1 y 31." }, "*");
+      return;
+    }
+    window.INTERCOL_FIREBASE.createPaymentNotification({
+      customerName: String(customerName || "").trim(),
+      customerId: String(customerId || "").trim(),
+      notificationDate: reminderDate.value,
+      paymentDay: Number(paymentDay),
+      advisorUid: state.currentUser.uid,
+      advisorName: state.advisorProfile.asesor
+    }).then(documentRef => {
+      state.pendingInvoiceId = documentRef.id;
+      openSection("notificaciones-pago");
+    }).catch(error => {
+      console.error("No se pudo programar la generación de factura:", error);
+      frame.contentWindow.postMessage({ type: "INTERCOL_INVOICE_CREATE_RESULT", ok: false, message: error.code === "permission-denied" ? "Firebase no permitió guardar. Revisa las reglas de notificacionesPago." : "No se pudo guardar. Revisa la conexión e inténtalo otra vez." }, "*");
+    });
+    return;
+  }
   if (event.data?.type === "INTERCOL_SECTION_READY") {
     broadcastTheme();
     frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile }, "*");
+    if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceId) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_INVOICE", id: state.pendingInvoiceId }, "*");
+      state.pendingInvoiceId = null;
+    }
   }
+  if (event.data?.type === "INTERCOL_CHECK_INVOICE_ALERTS") fireInvoiceBrowserAlerts();
   if (event.data?.type === "INTERCOL_AUTH_COMPLETE") refreshAdvisorState();
 });
 
+function nextInvoiceReminderDate(paymentDay) {
+  const day = Number(paymentDay);
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  const now = new Date();
+  for (let offset = 0; offset < 15; offset += 1) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() + offset, 1, 9, 0, 0, 0);
+    const paymentDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), Math.min(day, new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()), 9, 0, 0, 0);
+    const reminderDate = new Date(paymentDate);
+    reminderDate.setDate(reminderDate.getDate() - 10);
+    if (reminderDate > now) {
+      const value = new Date(reminderDate.getTime() - reminderDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      return { value, paymentDate };
+    }
+  }
+  return null;
+}
+
+let stopInvoiceNotificationSync = null;
+let invoiceNotificationUid = null;
+function invoiceReminderTimestamp(value) {
+  const dateValue = /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) + "T09:00" : value;
+  return new Date(dateValue).getTime();
+}
+function invoiceAlertStorageKey(record) { return "intercol_factura_alerta_" + state.currentUser?.uid + "_" + record.id + "_" + record.notificationDate; }
+function dueInvoiceNotifications() {
+  const now = Date.now();
+  return state.invoiceNotifications.filter(record => !record.reviewed && invoiceReminderTimestamp(record.notificationDate) <= now);
+}
+function formatInvoiceReminder(value) {
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) + "T09:00" : value;
+  return new Date(normalized).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" });
+}
+function openInvoiceVerification(id) {
+  state.pendingInvoiceId = id;
+  openSection("notificaciones-pago");
+}
+function renderInvoiceAlertHost() {
+  const host = $("#invoiceAlertHost");
+  if (!host) return;
+  host.replaceChildren();
+  const now = Date.now();
+  dueInvoiceNotifications().filter(record => {
+    const key = invoiceAlertStorageKey(record);
+    if (!state.invoiceToastStartedAt.has(key)) state.invoiceToastStartedAt.set(key, now);
+    return now - state.invoiceToastStartedAt.get(key) < 60000;
+  }).forEach(record => {
+    const card = document.createElement("article");
+    card.className = "invoice-alert-card";
+    const heading = document.createElement("strong");
+    heading.textContent = "Verifica la generación de esta factura";
+    const details = document.createElement("p");
+    details.textContent = record.customerName + " · Cédula " + record.customerId + " · " + formatInvoiceReminder(record.notificationDate);
+    const actions = document.createElement("div");
+    actions.className = "invoice-alert-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "invoice-alert-open";
+    open.textContent = "Abrir para verificar";
+    open.addEventListener("click", () => openInvoiceVerification(record.id));
+    const invoice = document.createElement("a");
+    invoice.className = "invoice-alert-link";
+    invoice.textContent = "Revisar factura";
+    invoice.href = "http://wisphub.net/clientes/ver/" + encodeURIComponent(record.customerId) + "@cibercitywisp/#retab3";
+    invoice.target = "_blank";
+    invoice.rel = "noopener noreferrer";
+    actions.append(open, invoice);
+    card.append(heading, details, actions);
+    host.append(card);
+  });
+}
+function fireInvoiceBrowserAlerts() {
+  renderInvoiceAlertHost();
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  dueInvoiceNotifications().forEach(record => {
+    const key = invoiceAlertStorageKey(record);
+    if (localStorage.getItem(key) === "sent") return;
+    const notification = new Notification("Verificar generación de factura", {
+      body: "Comprueba si se generó la factura de " + record.customerName + " (cédula " + record.customerId + ").",
+      tag: "factura-" + record.id,
+      requireInteraction: false
+    });
+    notification.onclick = () => {
+      window.focus();
+      openInvoiceVerification(record.id);
+      notification.close();
+    };
+    localStorage.setItem(key, "sent");
+  });
+}
+function startInvoiceNotificationSync() {
+  const firebase = window.INTERCOL_FIREBASE;
+  const uid = state.currentUser?.uid;
+  if (invoiceNotificationUid === uid && stopInvoiceNotificationSync) return;
+  if (stopInvoiceNotificationSync) { stopInvoiceNotificationSync(); stopInvoiceNotificationSync = null; }
+  invoiceNotificationUid = uid || null;
+  state.invoiceNotifications = [];
+  if (!uid || !state.advisorProfile || !firebase) { renderInvoiceAlertHost(); return; }
+  stopInvoiceNotificationSync = firebase.subscribePaymentNotifications(uid, items => {
+    state.invoiceNotifications = items.map(item => ({ id: item.id, customerName: String(item.nombre || ""), customerId: String(item.cedula || ""), notificationDate: String(item.fechaNotificacion || ""), reviewed: Boolean(item.revisado) }));
+    fireInvoiceBrowserAlerts();
+  }, error => console.error("No se pudieron revisar las alertas de facturas:", error));
+}
+setInterval(fireInvoiceBrowserAlerts, 15000);
 let stopAuthSync = null;
 async function handleAdvisorAuth(user) {
   const firebase = window.INTERCOL_FIREBASE;
@@ -291,6 +443,7 @@ async function handleAdvisorAuth(user) {
     catch (error) { console.error("No se pudo cargar el perfil del asesor:", error); }
   }
   renderSidebar();
+  startInvoiceNotificationSync();
   const active = state.sections.find(item => item.id === state.activeSectionId);
   if (active?.requiresAuth && (!state.currentUser || !state.advisorProfile)) openSection("acceso");
   else if (state.currentUser && state.advisorProfile && (state.pendingSectionId || state.activeSectionId === "acceso")) {
@@ -344,6 +497,11 @@ if (savedView?.view === "section" && state.sections.some((section) => section.id
 } else {
   setView("dashboard");
 }
+
+
+
+
+
 
 
 

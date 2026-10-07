@@ -13,7 +13,7 @@ service cloud.firestore {
     match /notificacionesPago/{notificationId} {
       allow read, delete: if signedIn() && resource.data.asesorUid == request.auth.uid;
       allow create: if signedIn() && request.resource.data.asesorUid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'fechaNotificacion', 'asesorUid', 'asesor', 'revisado', 'revisadoEn', 'revisadoPor', 'creadoEn', 'actualizadoEn']);
+        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'fechaNotificacion', 'diaPago', 'asesorUid', 'asesor', 'revisado', 'revisadoEn', 'revisadoPor', 'creadoEn', 'actualizadoEn']);
       allow update: if signedIn() && resource.data.asesorUid == request.auth.uid
         && request.resource.data.asesorUid == request.auth.uid;
     }

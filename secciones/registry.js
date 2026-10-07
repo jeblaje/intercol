@@ -15,8 +15,8 @@ window.INTERCOL_SECTIONS = [
   },
   {
     id: "notificaciones-pago",
-    name: "Notificaciones de pago",
-    description: "Organiza las fechas de notificación y los usuarios que debes verificar.",
+    name: "Generación de facturas",
+    description: "Programa cuándo verificar que se generó la factura de cada usuario.",
     icon: "◷",
     path: "secciones/notificaciones-pago/index.html",
     requiresAuth: true
@@ -58,6 +58,7 @@ window.INTERCOL_SECTIONS = [
     path: "secciones/reporte-servicio/index.html"
   }
 ];
+
 
 
 
