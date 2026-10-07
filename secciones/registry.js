@@ -14,6 +14,22 @@ window.INTERCOL_SECTIONS = [
     path: "secciones/mensajes-temporales/index.html"
   },
   {
+    id: "notificaciones-pago",
+    name: "Notificaciones de pago",
+    description: "Organiza las fechas de notificación y los usuarios que debes verificar.",
+    icon: "◷",
+    path: "secciones/notificaciones-pago/index.html",
+    requiresAuth: true
+  },
+  {
+    id: "acceso",
+    name: "Iniciar sesión / Registrarse",
+    description: "Accede con tu cuenta de asesor o crea una cuenta.",
+    icon: "♙",
+    path: "secciones/acceso/index.html",
+    hideFromLists: true
+  },
+  {
     id: "utilidades",
     name: "Utilidades",
     description: "Espacios para herramientas internas.",
@@ -42,3 +58,9 @@ window.INTERCOL_SECTIONS = [
     path: "secciones/reporte-servicio/index.html"
   }
 ];
+
+
+
+
+
+

@@ -201,3 +201,18 @@ h1 { margin: 4px 0 0; font-size: 22px; letter-spacing: -.02em; }
   .section-frame-wrap, .section-frame-wrap iframe { min-height: 72vh; }
 }
 .dashboard-message-advisor{margin:0 0 7px;color:var(--muted);font-size:10px}
+
+/* Separación entre módulos públicos y los que requieren cuenta */
+.protected-section-group { flex: 0 0 auto; max-height: 38vh; overflow: auto; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.protected-section-group .session-list { max-height: 18vh; }
+.account-nav-button { width: 100%; display: flex; align-items: center; gap: 9px; margin-top: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; }
+.account-nav-button:hover { border-color: var(--primary); }
+.account-avatar { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; background: var(--primary-soft); color: var(--primary); font-size: 10px; font-weight: 800; }
+.account-copy { min-width: 0; }
+.account-copy strong, .account-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-copy strong { font-size: 11px; }
+.account-copy small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.account-nav-button.is-signed-in { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+.account-nav-button.is-signed-in .account-avatar { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); color: var(--danger); }
+.account-nav-button.is-signed-in .account-copy small { color: var(--danger); font-weight: 750; }
+.account-nav-button.is-signed-in:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, var(--surface)); }

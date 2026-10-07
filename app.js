@@ -8,6 +8,9 @@ const state = {
   activeSectionId: null,
   temporaryMessages: [],
   temporaryMessagesError: "",
+  currentUser: null,
+  advisorProfile: null,
+  pendingSectionId: null,
   theme: loadTheme()
 };
 
@@ -56,24 +59,44 @@ function broadcastTheme() {
 }
 
 function renderSidebar() {
-  const list = $("#sectionList");
+  const publicList = $("#sectionList");
+  const protectedList = $("#protectedSectionList");
   const empty = $("#emptySections");
-  list.innerHTML = "";
-  empty.classList.toggle("hidden", state.sections.length > 0);
-
-  state.sections.forEach((section, index) => {
+  publicList.replaceChildren();
+  protectedList.replaceChildren();
+  const visibleSections = state.sections.filter(section => !section.hideFromLists && section.id !== "acceso");
+  const publicSections = visibleSections.filter(section => !section.requiresAuth);
+  const protectedSections = visibleSections.filter(section => section.requiresAuth);
+  empty.classList.toggle("hidden", publicSections.length > 0);
+  const appendSection = (section, list, index) => {
     const item = document.createElement("button");
     const active = state.activeView === "section" && state.activeSectionId === section.id;
-
     item.type = "button";
     item.className = `nav-item section-nav-item ${active ? "active" : ""}`;
-    item.innerHTML = `
-      <span class="nav-icon">${escapeHtml(section.icon || String(index + 1))}</span>
-      <span>${escapeHtml(section.name)}</span>
-    `;
+    item.innerHTML = `<span class="nav-icon">${escapeHtml(section.icon || String(index + 1))}</span><span>${escapeHtml(section.name)}</span>`;
     item.addEventListener("click", () => openSection(section.id));
     list.appendChild(item);
-  });
+  };
+  publicSections.forEach((section, index) => appendSection(section, publicList, index));
+  protectedSections.forEach((section, index) => appendSection(section, protectedList, index));
+  const account = $("#accountArea");
+  if (account) {
+    account.replaceChildren();
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "account-nav-button" + (state.currentUser ? " is-signed-in" : "");
+    if (state.currentUser) {
+      const advisorName = state.advisorProfile?.asesor || state.currentUser.displayName || "Cuenta";
+      const username = state.advisorProfile?.usuario || state.currentUser.email?.split("@")[0] || "";
+      button.innerHTML = `<span class="account-avatar">${escapeHtml(advisorName.slice(0, 2).toUpperCase())}</span><span class="account-copy"><strong>${escapeHtml(advisorName)}</strong><small>Cerrar sesión · ${escapeHtml(username)}</small></span>`;
+      button.addEventListener("click", async () => { try { await window.INTERCOL_FIREBASE?.signOutAdvisor(); } catch (error) { console.error(error); } });
+      button.title = "Cerrar sesión";
+    } else {
+      button.innerHTML = '<span class="account-avatar">♙</span><span class="account-copy"><strong>Iniciar sesión</strong><small>o registrarse</small></span>';
+      button.addEventListener("click", () => openSection("acceso"));
+    }
+    account.appendChild(button);
+  }
 }
 
 function setView(view) {
@@ -168,14 +191,15 @@ function renderDashboardMessages() {
   });
 }
 function renderSections() {
+  const availableSections = state.sections.filter(section => !section.hideFromLists && !section.requiresAuth);
   content.innerHTML = `
     <section class="hero">
       <div><span class="eyebrow">MÓDULOS INDEPENDIENTES</span><h2>Secciones de INTERCOL.</h2><p>Cada sección tiene su propio <strong>index.html</strong>, <strong>style.css</strong> y <strong>script.js</strong>. El dashboard solamente las carga.</p></div>
     </section>
-    <section class="panel"><div class="panel-header"><div><h3>${state.sections.length} sección${state.sections.length === 1 ? "" : "es"}</h3><span>Selecciona una para abrirla</span></div></div><div class="panel-body quick-grid" id="sectionsGrid"></div></section>
+    <section class="panel"><div class="panel-header"><div><h3>${availableSections.length} sección${availableSections.length === 1 ? "" : "es"}</h3><span>Selecciona una para abrirla</span></div></div><div class="panel-body quick-grid" id="sectionsGrid"></div></section>
   `;
   const grid = $("#sectionsGrid");
-  grid.innerHTML = state.sections.length ? state.sections.map((section, index) => `
+  grid.innerHTML = availableSections.length ? availableSections.map((section, index) => `
     <button class="quick-action" data-open-section="${escapeHtml(section.id)}"><span class="quick-icon">${escapeHtml(section.icon || String(index + 1))}</span><span><strong>${escapeHtml(section.name)}</strong><span>${escapeHtml(section.description || "Sin descripción")}</span></span></button>
   `).join("") : `<div class="placeholder" style="grid-column:1/-1"><div><strong>No hay secciones.</strong><p>Agrega una entrada en secciones/registry.js.</p></div></div>`;
   grid.querySelectorAll("[data-open-section]").forEach((button) => button.addEventListener("click", () => openSection(button.dataset.openSection)));
@@ -193,10 +217,15 @@ function renderSettings() {
 }
 
 function openSection(id) {
-  const section = state.sections.find((item) => item.id === id);
+  let section = state.sections.find((item) => item.id === id);
   if (!section) return;
-  state.activeSectionId = id;
+  if (section.requiresAuth && (!state.currentUser || !state.advisorProfile)) {
+    state.pendingSectionId = id;
+    section = state.sections.find(item => item.id === "acceso");
+  }
+  state.activeSectionId = section.id;
   state.activeView = "section";
+  id = section.id;
   saveCurrentView();
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.remove("active"));
   $("#pageEyebrow").textContent = "SECCIÓN";
@@ -212,6 +241,7 @@ function openSection(id) {
   const frame = $("#sectionFrame");
   frame.addEventListener("load", () => {
     broadcastTheme();
+    frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile }, "*");
     frame.contentWindow.scrollTo(0, 0);
   });
   window.scrollTo(0, 0);
@@ -243,10 +273,42 @@ window.addEventListener("message", (event) => {
     frame.style.height = `${Math.max(420, Number(event.data.height) || 0)}px`;
     return;
   }
-  if (!event.data || event.data.type !== "INTERCOL_SECTION_READY") return;
-  broadcastTheme();
+  if (event.source !== frame?.contentWindow) return;
+  if (event.data?.type === "INTERCOL_SECTION_READY") {
+    broadcastTheme();
+    frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile }, "*");
+  }
+  if (event.data?.type === "INTERCOL_AUTH_COMPLETE") refreshAdvisorState();
 });
 
+let stopAuthSync = null;
+async function handleAdvisorAuth(user) {
+  const firebase = window.INTERCOL_FIREBASE;
+  state.currentUser = user || null;
+  state.advisorProfile = null;
+  if (user) {
+    try { state.advisorProfile = await firebase.getAdvisorProfile(user.uid); }
+    catch (error) { console.error("No se pudo cargar el perfil del asesor:", error); }
+  }
+  renderSidebar();
+  const active = state.sections.find(item => item.id === state.activeSectionId);
+  if (active?.requiresAuth && (!state.currentUser || !state.advisorProfile)) openSection("acceso");
+  else if (state.currentUser && state.advisorProfile && (state.pendingSectionId || state.activeSectionId === "acceso")) {
+    const destination = state.pendingSectionId || "notificaciones-pago";
+    state.pendingSectionId = null;
+    openSection(destination);
+  } else if (state.activeView === "section") {
+    $("#sectionFrame")?.contentWindow?.postMessage({ type: "INTERCOL_AUTH_STATE", user: user ? { uid: user.uid } : null, profile: state.advisorProfile }, "*");
+  }
+}
+function refreshAdvisorState() {
+  const firebase = window.INTERCOL_FIREBASE;
+  if (!firebase) return;
+  if (!stopAuthSync) stopAuthSync = firebase.observeAuth(user => handleAdvisorAuth(user));
+  else handleAdvisorAuth(firebase.auth.currentUser);
+}
+window.addEventListener("intercol-firebase-ready", refreshAdvisorState);
+refreshAdvisorState();
 let stopTemporaryMessageSync = null;
 function startTemporaryMessageSync() {
   const firebase = window.INTERCOL_FIREBASE;
@@ -282,6 +344,12 @@ if (savedView?.view === "section" && state.sections.some((section) => section.id
 } else {
   setView("dashboard");
 }
+
+
+
+
+
+
 
 
 

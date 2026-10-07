@@ -1,12 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /smsTemp/{messageId} {
-      allow read, write: if true;
+    function signedIn() { return request.auth != null; }
+    match /smsTemp/{messageId} { allow read, write: if true; }
+    match /asesores/{advisorUid} {
+      allow create: if signedIn() && request.auth.uid == advisorUid
+        && request.resource.data.uid == advisorUid
+        && request.resource.data.keys().hasOnly(['uid', 'asesor', 'usuario', 'creadoEn']);
+      allow read: if signedIn() && request.auth.uid == advisorUid;
+      allow update, delete: if false;
     }
-
-    match /{document=**} {
-      allow read, write: if false;
+    match /notificacionesPago/{notificationId} {
+      allow read, delete: if signedIn() && resource.data.asesorUid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.asesorUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'fechaNotificacion', 'asesorUid', 'asesor', 'revisado', 'revisadoEn', 'revisadoPor', 'creadoEn', 'actualizadoEn']);
+      allow update: if signedIn() && resource.data.asesorUid == request.auth.uid
+        && request.resource.data.asesorUid == request.auth.uid;
     }
+    match /{document=**} { allow read, write: if false; }
   }
 }

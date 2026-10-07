@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Notificaciones de pago · INTERCOL</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="payment-app">
+    <header class="page-heading"><div><span class="kicker">SEGUIMIENTO DE USUARIOS</span><h1>Notificaciones de pago</h1><p>Programa una fecha para verificar al usuario y marca el seguimiento cuando esté listo.</p></div><span class="storage-badge"><span class="storage-dot"></span>Sincronizado con Firebase</span></header>
+    <section class="summary-grid" aria-label="Resumen de notificaciones">
+      <article class="summary-card summary-today"><span class="summary-icon">!</span><div><span class="summary-label">Para verificar hoy</span><strong id="todayCount">0</strong></div></article>
+      <article class="summary-card"><span class="summary-icon">◷</span><div><span class="summary-label">Próximas notificaciones</span><strong id="upcomingCount">0</strong></div></article>
+      <article class="summary-card"><span class="summary-icon">✓</span><div><span class="summary-label">Revisados</span><strong id="reviewedCount">0</strong></div></article>
+    </section>
+    <section class="workspace">
+      <section class="panel form-panel" aria-labelledby="formTitle">
+        <header class="panel-heading"><div class="step-number">01</div><div><h2 id="formTitle">Nueva notificación</h2><p>Registra a quién y cuándo debes verificar.</p></div></header>
+        <form id="notificationForm" class="form-body">
+          <input type="hidden" name="recordId">
+          <label for="customerName">Nombre del usuario</label><input id="customerName" name="customerName" type="text" autocomplete="name" placeholder="Nombre completo" required>
+          <label for="customerId">Cédula</label><input id="customerId" name="customerId" type="text" inputmode="numeric" autocomplete="off" placeholder="Número de cédula" required>
+          <label for="notificationDate">Fecha de notificación</label><input id="notificationDate" name="notificationDate" type="date" required>
+          <p class="form-hint">Elige un día del calendario, por ejemplo, 1 o 30 de octubre.</p>
+          <div class="form-actions"><button type="button" class="button secondary" id="cancelEdit" hidden>Cancelar</button><button type="submit" class="button primary" id="saveButton">Agregar notificación</button></div>
+          <p id="formStatus" class="form-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section class="panel list-panel" aria-labelledby="listTitle">
+        <header class="panel-heading list-panel-heading"><div class="step-number">02</div><div class="list-title"><h2 id="listTitle">Seguimiento</h2><p id="todayLabel">Notificaciones organizadas por fecha.</p></div><span class="today-date" id="todayDate"></span></header>
+        <div id="todayAlert" class="alert-banner" role="status" aria-live="polite" hidden><span class="alert-icon">!</span><div><strong id="alertTitle">Hay usuarios por verificar</strong><p id="alertText"></p></div></div>
+        <nav class="tabs" aria-label="Listas de notificaciones"><button type="button" class="tab active" data-tab="pending" aria-selected="true">Pendientes <span id="pendingTabCount">0</span></button><button type="button" class="tab" data-tab="reviewed" aria-selected="false">Revisados <span id="reviewedTabCount">0</span></button></nav>
+        <div id="pendingPanel" class="list-content">
+          <section class="date-group today-group"><div class="group-heading"><div><span class="group-marker today-marker"></span><h3>Verificar hoy</h3></div><span id="todayGroupCount" class="group-count">0</span></div><div id="todayList" class="record-list"></div><p id="todayEmpty" class="empty-state">No hay usuarios programados para hoy.</p></section>
+          <section id="overdueGroup" class="date-group overdue-group" hidden><div class="group-heading"><div><span class="group-marker overdue-marker"></span><h3>Pendientes anteriores</h3></div><span id="overdueGroupCount" class="group-count">0</span></div><div id="overdueList" class="record-list"></div></section>
+          <section class="date-group upcoming-group"><div class="group-heading"><div><span class="group-marker upcoming-marker"></span><h3>Próximas fechas</h3></div><span id="upcomingGroupCount" class="group-count">0</span></div><div id="upcomingList" class="record-list"></div><p id="upcomingEmpty" class="empty-state">Las próximas notificaciones aparecerán aquí.</p></section>
+        </div>
+        <div id="reviewedPanel" class="list-content" hidden><section class="date-group"><div class="group-heading"><div><span class="group-marker reviewed-marker"></span><h3>Usuarios revisados</h3></div><span id="reviewedGroupCount" class="group-count">0</span></div><div id="reviewedList" class="record-list"></div><p id="reviewedEmpty" class="empty-state">Los usuarios que marques como revisados aparecerán aquí.</p></section></div>
+      </section>
+    </section>
+    <p class="prototype-note">Tus registros se sincronizan en Firebase y solo son visibles desde tu cuenta.</p>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
+
