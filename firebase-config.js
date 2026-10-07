@@ -9,6 +9,7 @@ export const auth = getAuth(firebaseApp);
 const temporaryMessages = collection(firestore, "smsTemp");
 const paymentNotifications = collection(firestore, "notificacionesPago");
 const verifiedBoxes = collection(firestore, "cajasVerificadas");
+const publicSupportConfig = doc(firestore, "configuracionPublica", "equipos");
 function usernameEmail(username) {
   const normalized = String(username).trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,30}$/.test(normalized)) throw new Error("El usuario debe tener entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo.");
@@ -79,6 +80,23 @@ export function createVerifiedBox(data) {
   return addDoc(verifiedBoxes, record);
 }
 export function subscribeVerifiedBoxes(onChange, onError) { return onSnapshot(verifiedBoxes, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, createVerifiedBox, subscribeVerifiedBoxes };
+export function subscribePublicSupportConfig(onChange, onError) { return onSnapshot(publicSupportConfig, snapshot => onChange(snapshot.exists() ? snapshot.data() : null), onError); }
+export function savePublicSupportConfig(value) {
+  const groups = items => Array.from(items || [], item => String(item ?? "").trim()).filter(Boolean).slice(0, 100);
+  return setDoc(publicSupportConfig, {
+    soporte: {
+      arriba: groups(value.soporte?.arriba),
+      abajo: groups(value.soporte?.abajo),
+      sanJuan: groups(value.soporte?.sanJuan),
+      riohacha: groups(value.soporte?.riohacha)
+    },
+    ventas: {
+      valledupar: groups(value.ventas?.valledupar),
+      pueblos: groups(value.ventas?.pueblos)
+    },
+    actualizadoEn: serverTimestamp()
+  });
+}
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, createVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

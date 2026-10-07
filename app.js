@@ -8,6 +8,8 @@ const state = {
   activeSectionId: null,
   temporaryMessages: [],
   temporaryMessagesError: "",
+  supportConfig: { soporte: { arriba: [], abajo: [], sanJuan: [], riohacha: [] }, ventas: { valledupar: [], pueblos: [] } },
+  supportConfigError: "",
   currentUser: null,
   advisorProfile: null,
   pendingSectionId: null,
@@ -128,15 +130,65 @@ function setView(view) {
 function renderDashboard() {
   content.innerHTML = `
     <section class="dashboard-split" aria-label="Panel del dashboard">
-      <div class="dashboard-blank" aria-label="Espacio de trabajo"></div>
+      <section class="panel dashboard-teams">
+        <div class="panel-header"><div><h3>Equipos y contactos</h3><span>Configuración compartida</span></div><button class="secondary-button" id="editSupportConfig" type="button">Editar</button></div>
+        <div class="team-dashboard-body" id="dashboardTeams" aria-live="polite"></div>
+      </section>
       <section class="panel dashboard-messages">
         <div class="panel-header"><div><h3>Mensajes temporales</h3><span id="dashboardMessageCount">Mensajes que siguen vigentes</span></div><button class="secondary-button" id="manageTemporaryMessages" type="button">Administrar</button></div>
         <div class="dashboard-message-list" id="dashboardMessageList" aria-live="polite"></div>
       </section>
     </section>
   `;
+  $("#editSupportConfig").addEventListener("click", () => setView("settings"));
   $("#manageTemporaryMessages").addEventListener("click", () => openSection("mensajes-temporales"));
+  renderDashboardTeams();
   renderDashboardMessages();
+}
+
+const teamConfigFields = [
+  ["soporte.arriba", "Arriba", "soporte"], ["soporte.abajo", "Abajo", "soporte"],
+  ["soporte.sanJuan", "San Juan", "soporte"], ["soporte.riohacha", "Riohacha", "soporte"],
+  ["ventas.valledupar", "Quién envía Valledupar", "ventas"], ["ventas.pueblos", "Quién envía pueblos", "ventas"]
+];
+function supportGroupValues(path) {
+  const [group, key] = path.split(".");
+  const value = state.supportConfig?.[group]?.[key];
+  return Array.isArray(value) ? value : [];
+}
+function renderDashboardTeams() {
+  const host = $("#dashboardTeams");
+  if (!host) return;
+  host.replaceChildren();
+  if (state.supportConfigError) {
+    const error = document.createElement("p"); error.className = "dashboard-message-empty"; error.textContent = state.supportConfigError; host.append(error); return;
+  }
+  const groups = [
+    { title: "Técnicos de soporte", items: teamConfigFields.filter(item => item[2] === "soporte") },
+    { title: "Ventas", items: teamConfigFields.filter(item => item[2] === "ventas") }
+  ];
+  groups.forEach(group => {
+    const section = document.createElement("section"); section.className = "team-dashboard-group";
+    const title = document.createElement("h4"); title.textContent = group.title; section.append(title);
+    group.items.forEach(([path, label]) => {
+      const row = document.createElement("div"); row.className = "team-dashboard-row";
+      const name = document.createElement("strong"); name.textContent = label;
+      const values = document.createElement("div"); values.className = "team-dashboard-values";
+      const people = supportGroupValues(path);
+      values.textContent = people.length ? people.join(" · ") : "Sin asignar";
+      row.append(name, values); section.append(row);
+    });
+    host.append(section);
+  });
+}
+
+function populateSupportConfigForm() {
+  const form = $("#supportConfigForm");
+  if (!form || form.dataset.dirty === "true") return;
+  teamConfigFields.forEach(([path]) => {
+    const field = form.elements[path];
+    if (field) field.value = supportGroupValues(path).join("\n");
+  });
 }
 
 function readTemporaryMessages() {
@@ -216,8 +268,46 @@ function renderSettings() {
       <div class="setting-row"><div><strong>Tema oscuro</strong><p>Cambia colores, superficies y textos de toda la experiencia.</p></div><button class="toggle ${state.theme === "dark" ? "on" : ""}" id="settingsTheme" aria-label="Alternar tema"></button></div>
       <div class="setting-row"><div><strong>Arquitectura por secciones</strong><p>El dashboard no contiene el HTML interno de las herramientas.</p></div><span class="session-badge">Activo</span></div>
     </div></section>
+    <section class="panel settings-team-panel"><div class="panel-header"><div><h3>Equipos y contactos</h3><span>Lista compartida que también aparece en el dashboard. No requiere iniciar sesión.</span></div></div>
+      <form class="panel-body support-config-form" id="supportConfigForm">
+        <fieldset class="support-config-group"><legend>Técnicos de soporte</legend><div class="support-config-grid">
+          ${teamConfigFields.filter(item => item[2] === "soporte").map(([path, label]) => `<label>${escapeHtml(label)}<textarea name="${escapeAttribute(path)}" rows="3" placeholder="Un técnico por línea"></textarea></label>`).join("")}
+        </div></fieldset>
+        <fieldset class="support-config-group"><legend>Ventas</legend><div class="support-config-grid support-sales-grid">
+          ${teamConfigFields.filter(item => item[2] === "ventas").map(([path, label]) => `<label>${escapeHtml(label)}<textarea name="${escapeAttribute(path)}" rows="3" placeholder="Un nombre por línea"></textarea></label>`).join("")}
+        </div></fieldset>
+        <div class="support-config-actions"><p id="supportConfigStatus" role="status" aria-live="polite"></p><button class="primary-button" id="saveSupportConfig" type="submit">Guardar configuración</button></div>
+      </form>
+    </section>
   `;
+  populateSupportConfigForm();
+  $("#supportConfigForm").addEventListener("input", event => { event.currentTarget.dataset.dirty = "true"; });
+  $("#supportConfigForm").addEventListener("submit", saveSupportConfig);
   $("#settingsTheme").addEventListener("click", toggleTheme);
+}
+
+async function saveSupportConfig(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const firebase = window.INTERCOL_FIREBASE;
+  const status = $("#supportConfigStatus");
+  const button = $("#saveSupportConfig");
+  if (!firebase?.savePublicSupportConfig) { status.textContent = "Firebase no está listo. Recarga la página e inténtalo de nuevo."; return; }
+  const lines = path => String(form.elements[path].value || "").split(/[\n,]+/).map(value => value.trim()).filter(Boolean);
+  const value = { soporte: {}, ventas: {} };
+  teamConfigFields.forEach(([path]) => { const [group, key] = path.split("."); value[group][key] = lines(path); });
+  button.disabled = true; button.textContent = "Guardando…"; status.textContent = "Guardando cambios compartidos…";
+  try {
+    await firebase.savePublicSupportConfig(value);
+    state.supportConfig = value;
+    form.dataset.dirty = "false";
+    status.textContent = "Configuración guardada. Ya aparece en el dashboard para todos.";
+  } catch (error) {
+    console.error("No se pudo guardar la configuración de equipos:", error);
+    status.textContent = error?.code === "permission-denied"
+      ? "Firestore rechazó los cambios. Publica las reglas actualizadas de configuracionPublica en Firebase Console."
+      : `No se pudo guardar (${error?.code || "error"}): ${error?.message || "Revisa la conexión."}`;
+  } finally { button.disabled = false; button.textContent = "Guardar configuración"; }
 }
 
 function openSection(id) {
@@ -493,6 +583,34 @@ function startTemporaryMessageSync() {
 }
 window.addEventListener("intercol-firebase-ready", startTemporaryMessageSync);
 startTemporaryMessageSync();
+
+let stopSupportConfigSync = null;
+function normalizeSupportConfig(value) {
+  const groups = value?.soporte || {};
+  const sales = value?.ventas || {};
+  const asList = items => Array.isArray(items) ? items.map(item => String(item ?? "").trim()).filter(Boolean) : [];
+  return { soporte: { arriba: asList(groups.arriba), abajo: asList(groups.abajo), sanJuan: asList(groups.sanJuan), riohacha: asList(groups.riohacha) }, ventas: { valledupar: asList(sales.valledupar), pueblos: asList(sales.pueblos) } };
+}
+function startSupportConfigSync() {
+  const firebase = window.INTERCOL_FIREBASE;
+  if (!firebase?.subscribePublicSupportConfig || stopSupportConfigSync) return;
+  stopSupportConfigSync = firebase.subscribePublicSupportConfig(value => {
+    state.supportConfig = normalizeSupportConfig(value);
+    state.supportConfigError = "";
+    populateSupportConfigForm();
+    renderDashboardTeams();
+  }, error => {
+    console.error("No se pudo cargar la configuración pública de equipos:", error);
+    state.supportConfigError = error?.code === "permission-denied"
+      ? "Firebase no permite leer esta configuración. Publica las reglas actualizadas de configuracionPublica."
+      : "No se pudo cargar la configuración compartida. Revisa tu conexión.";
+    renderDashboardTeams();
+    const status = $("#supportConfigStatus");
+    if (status) status.textContent = state.supportConfigError;
+  });
+}
+window.addEventListener("intercol-firebase-ready", startSupportConfigSync);
+startSupportConfigSync();
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 $("#themeToggle").addEventListener("click", toggleTheme);

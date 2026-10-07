@@ -3,6 +3,25 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     match /smsTemp/{messageId} { allow read, write: if true; }
+    match /configuracionPublica/{configId} {
+      allow read: if configId == 'equipos';
+      allow create, update: if configId == 'equipos'
+        && request.resource.data.keys().hasOnly(['soporte', 'ventas', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['soporte', 'ventas', 'actualizadoEn'])
+        && request.resource.data.soporte is map
+        && request.resource.data.ventas is map
+        && request.resource.data.soporte.keys().hasOnly(['arriba', 'abajo', 'sanJuan', 'riohacha'])
+        && request.resource.data.soporte.keys().hasAll(['arriba', 'abajo', 'sanJuan', 'riohacha'])
+        && request.resource.data.ventas.keys().hasOnly(['valledupar', 'pueblos'])
+        && request.resource.data.ventas.keys().hasAll(['valledupar', 'pueblos'])
+        && request.resource.data.soporte.arriba is list
+        && request.resource.data.soporte.abajo is list
+        && request.resource.data.soporte.sanJuan is list
+        && request.resource.data.soporte.riohacha is list
+        && request.resource.data.ventas.valledupar is list
+        && request.resource.data.ventas.pueblos is list;
+      allow delete: if false;
+    }
     match /cajasVerificadas/{boxId} {
       allow read: if true;
       allow create: if signedIn()
