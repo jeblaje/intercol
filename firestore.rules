@@ -6,7 +6,7 @@ service cloud.firestore {
       return signedIn() && request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com';
     }
     function sectionUsesRoles(sectionId) {
-      return !(sectionId in ['mensajes-temporales', 'utilidades', 'enviar-moroso', 'verificar-caja', 'cajas-verificadas', 'reporte-servicio']);
+      return !(sectionId in ['mensajes-temporales', 'utilidades', 'enviar-moroso', 'cajas-verificadas', 'reporte-servicio']);
     }
     function advisorRoleAllows(roleId, sectionId, action) {
       let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
@@ -30,7 +30,7 @@ service cloud.firestore {
     }
     match /configuracionPublica/{configId} {
       allow read: if configId == 'equipos' && (!signedIn() || hasSectionPermission('utilidades', 'ver'));
-      allow create, update: if signedIn() && configId == 'equipos' && hasSectionPermission('utilidades', 'editar')
+      allow create, update: if configId == 'equipos' && (!signedIn() || hasSectionPermission('utilidades', 'editar'))
         && request.resource.data.keys().hasOnly(['soporte', 'ventas', 'actualizadoEn'])
         && request.resource.data.keys().hasAll(['soporte', 'ventas', 'actualizadoEn'])
         && request.resource.data.soporte is map
@@ -48,7 +48,7 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /cajasVerificadas/{boxId} {
-      allow read: if isSystemAdmin() || (signedIn() && hasSectionPermission('cajas-verificadas', 'ver'));
+      allow read: if true;
       allow create: if signedIn() && hasSectionPermission('verificar-caja', 'crear')
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
         && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn']);

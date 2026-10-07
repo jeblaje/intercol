@@ -76,13 +76,17 @@ function render() { updateNav(); if (state.view === "dashboard") dashboardView()
 function navigate(view) { if (!views[view]) return; if (location.hash !== `#${view}`) location.hash = view; else { state.view = view; render(); } }
 async function loadData() {
   setStatus("Cargando datos…");
+  let loadStep = "leer el catálogo de roles";
   try {
     const defaults = Object.fromEntries(listPermissionSections().map(section => [section.id, { ver: true, crear: true, editar: true, eliminar: false }]));
+    loadStep = "crear o leer el rol Asesor";
     await state.firebase.ensureAdvisorRole("asesor", "Asesor", defaults, state.user.uid);
+    loadStep = "leer asesores, roles y permisos";
     const [advisors, roles, legacyPermissions] = await Promise.all([state.firebase.listAdvisorProfiles(), state.firebase.listAdvisorRoles(), state.firebase.listAdvisorSectionPermissions()]);
     const knownRoles = new Map(roles.map(role => [role.id, role]));
     const legacyByAdvisor = new Map(legacyPermissions.map(item => [item.id, item]));
     state.advisors = advisors;
+    loadStep = "migrar asignaciones de roles existentes";
     for (const advisor of state.advisors) {
       const legacy = legacyByAdvisor.get(advisor.id);
       if (advisor.rol && knownRoles.has(advisor.rol)) continue;
@@ -98,12 +102,34 @@ async function loadData() {
       advisor.rol = roleId;
     }
     state.roles = await state.firebase.listAdvisorRoles();
+    loadStep = "completar permisos predeterminados del rol Asesor";
+    const advisorRole = state.roles.find(role => role.id === "asesor");
+    if (advisorRole) {
+      const completedPermissions = { ...(advisorRole.permisos || {}) };
+      let permissionsChanged = false;
+      Object.entries(defaults).forEach(([sectionId, defaultActions]) => {
+        const currentActions = completedPermissions[sectionId] || {};
+        const mergedActions = { ...defaultActions, ...currentActions };
+        if (JSON.stringify(currentActions) !== JSON.stringify(mergedActions)) permissionsChanged = true;
+        completedPermissions[sectionId] = mergedActions;
+      });
+      if (permissionsChanged) {
+        await state.firebase.saveAdvisorRole("asesor", advisorRole.nombre || "Asesor", completedPermissions, state.user.uid);
+        advisorRole.permisos = completedPermissions;
+      }
+    }
     state.advisors = state.advisors.map(advisor => ({ ...advisor, rol: advisor.rol || "asesor" }));
     if (!state.roles.some(role => role.id === state.selectedRole) && !state.roleDraft) state.selectedRole = state.roles[0]?.id || "asesor";
     setStatus("Datos sincronizados con Firebase"); render();
   } catch (error) {
-    console.error("No se pudo cargar la administración de INTERCOL:", error); setStatus(error.code === "permission-denied" ? "Firebase bloqueó la lectura o escritura de roles. Publica firestore.rules actualizado." : "Error de conexión con Firebase", true);
-    host.innerHTML = `<section class="empty-panel"><div class="empty-icon">!</div><h2>No se pudieron cargar los datos</h2><p>${error.code === "permission-denied" ? "Publica las reglas actualizadas de firestore.rules para permitir la administración del catálogo de roles." : "Revisa la conexión a internet e inténtalo de nuevo."}</p></section>`;
+    console.error(`No se pudo completar el paso «${loadStep}» en la administración de INTERCOL:`, error);
+    const errorCode = error?.code || "error";
+    const isDenied = errorCode === "permission-denied";
+    const detail = isDenied
+      ? `Firestore denegó el paso «${loadStep}» (${errorCode}). Verifica que publicaste las reglas en el proyecto intercol-784d9 y que la cuenta administradora sea jeblaje@intercol-784d9.firebaseapp.com.`
+      : `Falló el paso «${loadStep}» (${errorCode}): ${error?.message || "Revisa la conexión."}`;
+    setStatus(isDenied ? `Firebase denegó: ${loadStep}.` : `Error al ${loadStep} (${errorCode}).`, true);
+    host.innerHTML = `<section class="empty-panel"><div class="empty-icon">!</div><h2>No se pudieron cargar los datos</h2><p>${escapeHtml(detail)}</p></section>`;
   }
 }
 function slugifyRole(name) { return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
@@ -116,7 +142,7 @@ async function saveRole() {
   const permissions = {}; host.querySelectorAll("input[data-section][data-action]").forEach(input => { permissions[input.dataset.section] ||= { ver: false, crear: false, editar: false, eliminar: false }; permissions[input.dataset.section][input.dataset.action] = input.checked; });
   state.busy = true; button.disabled = true; status.textContent = "Guardando permisos del rol…";
   try { await state.firebase.saveAdvisorRole(roleId, name, permissions, state.user.uid); const updated = { id: roleId, nombre: name, permisos: permissions }; const index = state.roles.findIndex(item => item.id === roleId); if (index < 0) state.roles.push(updated); else state.roles[index] = { ...state.roles[index], ...updated }; state.selectedRole = roleId; state.roleDraft = false; status.textContent = "Rol guardado."; rolesView(); $("#roleStatus").textContent = "Rol guardado."; }
-  catch (error) { console.error("No se pudo guardar el rol:", error); status.textContent = error.code === "permission-denied" ? "Firebase no autorizó guardar el rol. Publica las reglas actualizadas." : "No se pudo guardar el rol."; }
+  catch (error) { console.error("No se pudo guardar el rol:", error); status.textContent = error?.code === "permission-denied" ? "Firestore denegó guardar el rol (permission-denied). Confirma que publicaste las reglas en el proyecto intercol-784d9 y que tu cuenta es la administradora autorizada." : `No se pudo guardar el rol (${error?.code || "error"}): ${error?.message || "Revisa la conexión."}`; }
   finally { state.busy = false; if ($("#saveRole")) $("#saveRole").disabled = false; }
 }
 async function deleteRole() {

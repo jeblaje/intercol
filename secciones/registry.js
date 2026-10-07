@@ -48,7 +48,8 @@ window.INTERCOL_SECTIONS = [
     name: "Verificar Caja",
     description: "Herramienta para verificar y cuadrar la caja.",
     icon: "✓",
-    path: "secciones/verificar-caja/index.html"
+    path: "secciones/verificar-caja/index.html",
+    requiresAuth: true
   },
   {
     id: "cajas-verificadas",
