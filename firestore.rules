@@ -3,6 +3,13 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     match /smsTemp/{messageId} { allow read, write: if true; }
+    match /cajasVerificadas/{boxId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.asesorUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn']);
+      allow update, delete: if false;
+    }
     match /asesores/{advisorUid} {
       allow create: if signedIn() && request.auth.uid == advisorUid
         && request.resource.data.uid == advisorUid

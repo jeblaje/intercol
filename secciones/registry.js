@@ -51,6 +51,13 @@ window.INTERCOL_SECTIONS = [
     path: "secciones/verificar-caja/index.html"
   },
   {
+    id: "cajas-verificadas",
+    name: "Cajas verificadas",
+    description: "Busca cajas y consulta sus fichas compartidas.",
+    icon: "▤",
+    path: "secciones/cajas-verificadas/index.html"
+  },
+  {
     id: "reporte-servicio",
     name: "Reporte servicio",
     description: "Prepara reportes de caja ponchada y autorización de splitter.",

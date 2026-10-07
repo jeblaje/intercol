@@ -294,6 +294,15 @@ window.addEventListener("message", (event) => {
     frame.style.height = `${Math.max(420, Number(event.data.height) || 0)}px`;
     return;
   }
+  if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_REQUIRE_AUTH") {
+    state.pendingSectionId = state.activeSectionId;
+    openSection("acceso");
+    return;
+  }
+  if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_OPEN_VERIFIED_BOXES") {
+    openSection("cajas-verificadas");
+    return;
+  }
   if (event.source !== frame?.contentWindow) return;
   if (event.data?.type === "INTERCOL_OPEN_INVOICE_FROM_UTILITIES") {
     const { customerName, customerId, paymentDay } = event.data;

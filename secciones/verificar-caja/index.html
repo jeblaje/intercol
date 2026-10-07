@@ -23,6 +23,7 @@
           <label for="address">Dirección</label><input id="address" name="address" type="text" placeholder="Dirección de la caja" required>
           <label for="technician">Técnico</label><input id="technician" name="technician" type="text" placeholder="Nombre del técnico" required>
           <label for="advisor">Asesor</label><input id="advisor" name="advisor" type="text" placeholder="Nombre del asesor" required>
+          <label for="filterLink">Link para filtrar la caja <span class="optional-label">(opcional)</span></label><input id="filterLink" name="link" type="url" placeholder="https://...">
           <p class="form-hint">El tipo x8 o x16 identifica la caja. Puedes agregar más cédulas que puertos nominales.</p>
         </form>
       </section>
@@ -43,8 +44,17 @@
     <section class="card export-card" aria-labelledby="exportTitle">
       <header class="card-header"><div class="step">03</div><div><h2 id="exportTitle">Copiar a la hoja de cajas</h2><p>Prepara una fila por puerto, en el orden de las columnas de tu Excel.</p></div></header>
       <div class="card-body export-body">
-        <div class="export-actions"><button type="button" class="primary" id="copySheet" disabled>Copiar bloque con formato</button><span id="copyStatus" class="copy-status" role="status" aria-live="polite">Completa los datos de la caja y agrega las cédulas.</span></div>
+        <div class="export-actions"><button type="button" class="primary" id="copySheet" disabled>Copiar bloque con formato</button><button type="button" class="secondary" id="markBoxVerified" disabled>Caja verificada</button><span id="copyStatus" class="copy-status" role="status" aria-live="polite">Completa los datos de la caja y agrega las cédulas.</span></div>
         <p class="form-hint">Pega en la primera celda del bloque vacío. La x16 se copia como puertos 1–8, dos filas vacías y otra vez 1–8. En pantalla se conserva el orden de la lista del técnico y se muestra aparte el puerto real. Marca la casilla de un registro para colorear de naranja su celda de comentario al copiar.</p>
+      </div>
+    </section>
+
+    <section class="card verified-card" aria-labelledby="verifiedTitle">
+      <header class="card-header"><div class="step">04</div><div><h2 id="verifiedTitle">Cajas verificadas</h2><p>Consulta pública; guardar una caja requiere iniciar sesión.</p></div><button type="button" class="secondary" id="openPublicVerifiedList">Abrir listado público ↗</button><span id="verifiedCount" class="count-badge">Cargando…</span></header>
+      <div class="card-body verified-body">
+        <div class="verified-filters"><label class="sr-only" for="verifiedSearch">Buscar cajas</label><input id="verifiedSearch" type="search" placeholder="Buscar por caja, dirección, técnico, asesor o cédula"><label class="sr-only" for="verifiedType">Filtrar tipo de caja</label><select id="verifiedType"><option value="all">Todas las cajas</option><option value="x8">X8</option><option value="x16">X16</option></select></div>
+        <p id="verifiedStatus" class="verified-status" role="status" aria-live="polite">Cargando cajas verificadas…</p>
+        <div class="verified-layout"><div id="verifiedList" class="verified-list"></div><aside id="verifiedDetail" class="verified-detail"><div class="detail-placeholder"><span class="detail-icon">▤</span><strong>Selecciona una caja</strong><p>Su ficha aparecerá aquí con los puertos, comentarios y marcas naranjas.</p></div></aside></div>
       </div>
     </section>
 

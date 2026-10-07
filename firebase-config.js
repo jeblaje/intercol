@@ -8,6 +8,7 @@ export const firestore = getFirestore(firebaseApp);
 export const auth = getAuth(firebaseApp);
 const temporaryMessages = collection(firestore, "smsTemp");
 const paymentNotifications = collection(firestore, "notificacionesPago");
+const verifiedBoxes = collection(firestore, "cajasVerificadas");
 function usernameEmail(username) {
   const normalized = String(username).trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,30}$/.test(normalized)) throw new Error("El usuario debe tener entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo.");
@@ -51,6 +52,33 @@ export function subscribeTemporaryMessages(onChange, onError) { return onSnapsho
 export function createTemporaryMessage({ text, advisor, expiresAt }) { return addDoc(temporaryMessages, { data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), createdAt: serverTimestamp() }); }
 export function updateTemporaryMessage(id, { text, advisor, expiresAt }) { return updateDoc(doc(firestore, "smsTemp", id), { data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), updatedAt: serverTimestamp() }); }
 export function deleteTemporaryMessage(id) { return deleteDoc(doc(firestore, "smsTemp", id)); }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification };
+export function createVerifiedBox(data) {
+  // La ficha se arma dentro de un iframe. Reconstruye el arreglo y sus objetos
+  // en el contexto principal para que Firestore no reciba arrays de otro realm.
+  const cedulas = Array.from(data.cedulas || [], user => ({
+    cedula: String(user.cedula ?? ""),
+    puertoTecnico: Number(user.puertoTecnico),
+    puertoReal: Number(user.puertoReal),
+    comentario: String(user.comentario ?? ""),
+    fondoNaranja: Boolean(user.fondoNaranja)
+  }));
+  const record = {
+    fecha: String(data.fecha ?? ""),
+    tipoCaja: String(data.tipoCaja ?? ""),
+    numeroCaja: String(data.numeroCaja ?? ""),
+    direccion: String(data.direccion ?? ""),
+    tecnico: String(data.tecnico ?? ""),
+    asesor: String(data.asesor ?? ""),
+    link: String(data.link ?? ""),
+    asesorUid: String(data.asesorUid ?? ""),
+    creadoPor: String(data.creadoPor ?? ""),
+    usuarioRegistrado: String(data.usuarioRegistrado ?? ""),
+    cedulas,
+    creadoEn: serverTimestamp()
+  };
+  return addDoc(verifiedBoxes, record);
+}
+export function subscribeVerifiedBoxes(onChange, onError) { return onSnapshot(verifiedBoxes, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, createVerifiedBox, subscribeVerifiedBoxes };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

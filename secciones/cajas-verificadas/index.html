@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cajas verificadas · INTERCOL</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="verified-app">
+    <header class="heading"><div><span class="kicker">CONSULTA PÚBLICA</span><h1>Cajas verificadas</h1><p>Busca una caja y consulta sus puertos, identificaciones y el enlace para filtrarla.</p></div><span class="count" id="boxCount">Conectando…</span></header>
+    <section class="list-card">
+      <div class="filters">
+        <label class="sr-only" for="boxSearch">Buscar caja</label><input id="boxSearch" type="search" placeholder="Buscar por número, dirección, técnico, asesor, usuario o cédula">
+        <label class="sr-only" for="boxType">Tipo de caja</label><select id="boxType"><option value="all">Todos los tipos</option><option value="x8">X8</option><option value="x16">X16</option></select>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite">Cargando cajas verificadas…</p>
+      <div class="layout"><div class="box-list" id="boxList"></div><aside class="box-detail" id="boxDetail"><div class="empty-detail"><span>▤</span><strong>Selecciona una caja</strong><p>La ficha y los puertos aparecerán aquí.</p></div></aside></div>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
