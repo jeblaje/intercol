@@ -2,10 +2,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    match /smsTemp/{messageId} { allow read, write: if true; }
+    function isSystemAdmin() {
+      return signedIn() && request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com';
+    }
+    function sectionUsesRoles(sectionId) {
+      return !(sectionId in ['mensajes-temporales', 'utilidades', 'enviar-moroso', 'verificar-caja', 'cajas-verificadas', 'reporte-servicio']);
+    }
+    function advisorRoleAllows(roleId, sectionId, action) {
+      let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
+      return roleId is string && exists(rolePath)
+        && get(rolePath).data.permisos is map
+        && get(rolePath).data.permisos[sectionId] is map
+        && get(rolePath).data.permisos[sectionId][action] == true;
+    }
+    function hasSectionPermission(sectionId, action) {
+      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
+      return isSystemAdmin() || (signedIn() && (
+        !sectionUsesRoles(sectionId) ||
+        (exists(advisorPath) && advisorRoleAllows(get(advisorPath).data.get('rol', 'asesor'), sectionId, action))
+      ));
+    }
+    match /smsTemp/{messageId} {
+      allow read: if true;
+      allow create: if signedIn() && hasSectionPermission('mensajes-temporales', 'crear');
+      allow update: if signedIn() && hasSectionPermission('mensajes-temporales', 'editar');
+      allow delete: if signedIn() && hasSectionPermission('mensajes-temporales', 'eliminar');
+    }
     match /configuracionPublica/{configId} {
-      allow read: if configId == 'equipos';
-      allow create, update: if configId == 'equipos'
+      allow read: if configId == 'equipos' && (!signedIn() || hasSectionPermission('utilidades', 'ver'));
+      allow create, update: if signedIn() && configId == 'equipos' && hasSectionPermission('utilidades', 'editar')
         && request.resource.data.keys().hasOnly(['soporte', 'ventas', 'actualizadoEn'])
         && request.resource.data.keys().hasAll(['soporte', 'ventas', 'actualizadoEn'])
         && request.resource.data.soporte is map
@@ -23,25 +48,55 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /cajasVerificadas/{boxId} {
-      allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.asesorUid == request.auth.uid
+      allow read: if isSystemAdmin() || (signedIn() && hasSectionPermission('cajas-verificadas', 'ver'));
+      allow create: if signedIn() && hasSectionPermission('verificar-caja', 'crear')
+        && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
         && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn']);
-      allow update, delete: if false;
+      allow update: if signedIn() && hasSectionPermission('cajas-verificadas', 'editar')
+        && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid);
+      allow delete: if signedIn() && hasSectionPermission('cajas-verificadas', 'eliminar')
+        && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid);
     }
     match /asesores/{advisorUid} {
       allow create: if signedIn() && request.auth.uid == advisorUid
         && request.resource.data.uid == advisorUid
-        && request.resource.data.keys().hasOnly(['uid', 'asesor', 'usuario', 'creadoEn']);
-      allow read: if signedIn() && request.auth.uid == advisorUid;
-      allow update, delete: if false;
+        && request.resource.data.rol == 'asesor'
+        && request.resource.data.keys().hasOnly(['uid', 'asesor', 'usuario', 'rol', 'creadoEn']);
+      allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid);
+      allow update: if isSystemAdmin()
+        && request.resource.data.rol is string
+        && exists(/databases/$(database)/documents/rolesAsesores/$(request.resource.data.rol))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rol', 'rolActualizadoPor', 'rolActualizadoEn']);
+      allow delete: if false;
+    }
+    match /rolesAsesores/{roleId} {
+      allow read: if signedIn();
+      allow create, update: if isSystemAdmin()
+        && request.resource.data.nombre is string
+        && request.resource.data.permisos is map
+        && request.resource.data.keys().hasOnly(['nombre', 'permisos', 'creadoPor', 'actualizadoPor', 'actualizadoEn']);
+      allow delete: if isSystemAdmin() && roleId != 'asesor';
+    }
+    match /permisosAsesores/{advisorUid} {
+      allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid);
+      allow create, update: if isSystemAdmin()
+        && request.resource.data.asesorUid == advisorUid
+        && request.resource.data.keys().hasOnly(['asesorUid', 'rol', 'permisos', 'actualizadoPor', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['asesorUid', 'rol', 'permisos', 'actualizadoPor', 'actualizadoEn'])
+        && request.resource.data.rol in ['Operador', 'Solo lectura', 'Personalizado']
+        && request.resource.data.permisos is map;
+      allow delete: if isSystemAdmin();
     }
     match /notificacionesPago/{notificationId} {
-      allow read, delete: if signedIn() && resource.data.asesorUid == request.auth.uid;
-      allow create: if signedIn() && request.resource.data.asesorUid == request.auth.uid
+      allow read: if isSystemAdmin() || (signedIn() && resource.data.asesorUid == request.auth.uid && hasSectionPermission('notificaciones-pago', 'ver'));
+      allow delete: if signedIn() && hasSectionPermission('notificaciones-pago', 'eliminar')
+        && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid);
+      allow create: if signedIn() && hasSectionPermission('notificaciones-pago', 'crear')
+        && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
         && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'fechaNotificacion', 'diaPago', 'asesorUid', 'asesor', 'revisado', 'revisadoEn', 'revisadoPor', 'creadoEn', 'actualizadoEn']);
-      allow update: if signedIn() && resource.data.asesorUid == request.auth.uid
-        && request.resource.data.asesorUid == request.auth.uid;
+      allow update: if signedIn() && hasSectionPermission('notificaciones-pago', 'editar')
+        && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid)
+        && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid);
     }
     match /{document=**} { allow read, write: if false; }
   }

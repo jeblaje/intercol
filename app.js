@@ -12,6 +12,8 @@ const state = {
   supportConfigError: "",
   currentUser: null,
   advisorProfile: null,
+  sectionPermissions: null,
+  systemAdmin: false,
   pendingSectionId: null,
   pendingInvoiceId: null,
   pendingInvoiceDraft: null,
@@ -64,15 +66,28 @@ function broadcastTheme() {
   frame.contentWindow.postMessage({ type: "INTERCOL_THEME", theme: state.theme, variables: themePayload() }, "*");
 }
 
+function isSystemAdminAccount(user = state.currentUser) {
+  return String(user?.email || "").toLowerCase() === "jeblaje@intercol-784d9.firebaseapp.com";
+}
+
+function canViewSection(sectionId) {
+  const section = state.sections.find(item => item.id === sectionId);
+  if (!section) return false;
+  if (!section.requiresAuth || state.systemAdmin) return true;
+  return Boolean(state.currentUser && state.advisorProfile && state.sectionPermissions?.[sectionId]?.ver === true);
+}
+
 function renderSidebar() {
   const publicList = $("#sectionList");
   const protectedList = $("#protectedSectionList");
   const empty = $("#emptySections");
   publicList.replaceChildren();
   protectedList.replaceChildren();
-  const visibleSections = state.sections.filter(section => !section.hideFromLists && section.id !== "acceso");
+  const visibleSections = state.sections.filter(section => !section.hideFromLists && section.id !== "acceso" && canViewSection(section.id));
   const publicSections = visibleSections.filter(section => !section.requiresAuth);
   const protectedSections = visibleSections.filter(section => section.requiresAuth);
+  const protectedHeading = protectedList.closest(".protected-section-group")?.querySelector(".section-heading");
+  if (protectedHeading) protectedHeading.hidden = protectedSections.length === 0;
   empty.classList.toggle("hidden", publicSections.length > 0);
   const appendSection = (section, list, index) => {
     const item = document.createElement("button");
@@ -316,6 +331,19 @@ function openSection(id) {
   if (section.requiresAuth && (!state.currentUser || !state.advisorProfile)) {
     state.pendingSectionId = id;
     section = state.sections.find(item => item.id === "acceso");
+    if (!section) { setView("dashboard"); return; }
+    id = section.id;
+  }
+  if (!canViewSection(id)) {
+    state.activeSectionId = null;
+    state.activeView = "permission-denied";
+    $("#pageEyebrow").textContent = "ACCESO RESTRINGIDO";
+    $("#pageTitle").textContent = section.name;
+    content.innerHTML = `<section class="panel" style="max-width:640px;margin:32px auto;padding:28px"><span class="eyebrow">PERMISOS DE ASESOR</span><h2 style="margin:8px 0">No tienes acceso a esta sección</h2><p style="color:var(--muted)">Solicita al administrador que habilite el permiso para ${escapeHtml(section.name)}.</p><button class="primary-button" id="returnDashboard">Ir al dashboard</button></section>`;
+    $("#returnDashboard").addEventListener("click", () => setView("dashboard"));
+    saveCurrentView();
+    renderSidebar();
+    return;
   }
   state.activeSectionId = section.id;
   state.activeView = "section";
@@ -335,7 +363,7 @@ function openSection(id) {
   const frame = $("#sectionFrame");
   frame.addEventListener("load", () => {
     broadcastTheme();
-    frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile }, "*");
+    frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile, permissions: state.sectionPermissions, isAdmin: state.systemAdmin }, "*");
     if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceId) {
       frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_INVOICE", id: state.pendingInvoiceId }, "*");
       state.pendingInvoiceId = null;
@@ -418,7 +446,7 @@ window.addEventListener("message", (event) => {
   }
   if (event.data?.type === "INTERCOL_SECTION_READY") {
     broadcastTheme();
-    frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile }, "*");
+    frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile, permissions: state.sectionPermissions, isAdmin: state.systemAdmin }, "*");
     if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceId) {
       frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_INVOICE", id: state.pendingInvoiceId }, "*");
       state.pendingInvoiceId = null;
@@ -541,20 +569,29 @@ async function handleAdvisorAuth(user) {
   const firebase = window.INTERCOL_FIREBASE;
   state.currentUser = user || null;
   state.advisorProfile = null;
+  state.sectionPermissions = null;
+  state.systemAdmin = isSystemAdminAccount(user);
   if (user) {
     try { state.advisorProfile = await firebase.getAdvisorProfile(user.uid); }
     catch (error) { console.error("No se pudo cargar el perfil del asesor:", error); }
+    if (!state.systemAdmin) {
+      try {
+        const rolePermissions = await firebase.getAdvisorRolePermissions(state.advisorProfile?.rol || "asesor");
+        state.sectionPermissions = rolePermissions?.permisos || {};
+      } catch (error) { console.error("No se pudieron cargar los permisos del rol del asesor:", error); state.sectionPermissions = {}; }
+    }
   }
   renderSidebar();
   startInvoiceNotificationSync();
   const active = state.sections.find(item => item.id === state.activeSectionId);
-  if (active?.requiresAuth && (!state.currentUser || !state.advisorProfile)) openSection("acceso");
+  if (active && !canViewSection(active.id)) openSection(active.id);
+  else if (active?.requiresAuth && (!state.currentUser || !state.advisorProfile)) openSection("acceso");
   else if (state.currentUser && state.advisorProfile && (state.pendingSectionId || state.activeSectionId === "acceso")) {
     const destination = state.pendingSectionId || "notificaciones-pago";
     state.pendingSectionId = null;
     openSection(destination);
   } else if (state.activeView === "section") {
-    $("#sectionFrame")?.contentWindow?.postMessage({ type: "INTERCOL_AUTH_STATE", user: user ? { uid: user.uid } : null, profile: state.advisorProfile }, "*");
+    $("#sectionFrame")?.contentWindow?.postMessage({ type: "INTERCOL_AUTH_STATE", user: user ? { uid: user.uid } : null, profile: state.advisorProfile, permissions: state.sectionPermissions, isAdmin: state.systemAdmin }, "*");
   }
 }
 function refreshAdvisorState() {

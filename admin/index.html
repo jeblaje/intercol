@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Panel independiente de administración de INTERCOL.">
+  <title>Administración · INTERCOL</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <div class="admin-brand">
+        <span class="brand-mark">I</span>
+        <span><strong>INTERCOL</strong><small>ADMINISTRACIÓN</small></span>
+      </div>
+
+      <div class="nav-label">PANEL</div>
+      <button class="admin-nav-item active" type="button" data-view="dashboard"><span>⌂</span>Dashboard</button>
+
+      <div class="nav-label management-label">GESTIÓN DEL SISTEMA</div>
+      <button class="admin-nav-item" type="button" data-view="advisors"><span>♙</span>Asesores</button>
+      <button class="admin-nav-item" type="button" data-view="sections"><span>▣</span>Secciones</button>
+      <button class="admin-nav-item" type="button" data-view="permissions"><span>⚿</span>Roles y permisos</button>
+
+      <div class="sidebar-note"><span class="status-dot"></span><span>Consola independiente<br><small>INTERCOL</small></span></div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div><span class="eyebrow">ADMINISTRACIÓN DEL SISTEMA</span><h1 id="adminPageTitle">Dashboard</h1></div>
+        <div class="admin-topbar-actions"><span class="admin-badge" id="adminStatus"><span class="status-dot"></span>Conectando con Firebase…</span><button type="button" class="logout-button" id="adminSignOut" hidden>Cerrar sesión</button></div>
+      </header>
+
+      <div class="admin-content" id="adminView" aria-live="polite"></div>
+        <footer class="admin-footer">INTERCOL <span>·</span> Panel de administración</footer>
+    </main>
+  </div>
+  <script src="../secciones/registry.js"></script>
+  <script type="module" src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

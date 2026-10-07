@@ -3,7 +3,7 @@ import {
   deleteTemporaryMessage,
   subscribeTemporaryMessages,
   updateTemporaryMessage
-} from "../../firebase-config.js";
+} from "../../admin/firebase-config.js";
 
 const form = document.querySelector("#messageForm");
 const list = document.querySelector("#messageList");
