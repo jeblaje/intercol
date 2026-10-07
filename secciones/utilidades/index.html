@@ -46,8 +46,8 @@
           <label class="field-label" for="reconnectionTechnician">Técnico</label><input id="reconnectionTechnician" type="text" placeholder="Nombre del técnico">
           <label class="field-label" for="paymentDay">Fecha de pago (día del mes)</label><input id="paymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 1">
           <label class="field-label" for="reconnectionAdvisor">Asesor</label><input id="reconnectionAdvisor" type="text" placeholder="Nombre del asesor">
-          <p class="invoice-reminder-hint">Programa la verificación de factura 10 días antes del día de pago.</p>
-          <button type="button" class="invoice-reminder-button" id="createInvoiceReminder">Guardar y abrir Generación de facturas</button>
+          <p class="invoice-reminder-hint">Calcula el aviso 10 días antes del pago y precarga los datos. Se guardará solo cuando confirmes en Generación de facturas.</p>
+          <button type="button" class="invoice-reminder-button" id="createInvoiceReminder">Ir a Generación de facturas</button>
           <span id="invoiceReminderStatus" class="tool-status" role="status" aria-live="polite"></span>
         </div>
         <div id="creditFields" class="record-fields" hidden>

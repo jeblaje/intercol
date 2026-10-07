@@ -12,6 +12,7 @@ const state = {
   advisorProfile: null,
   pendingSectionId: null,
   pendingInvoiceId: null,
+  pendingInvoiceDraft: null,
   invoiceNotifications: [],
   invoiceToastStartedAt: new Map(),
   theme: loadTheme()
@@ -249,6 +250,10 @@ function openSection(id) {
       frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_INVOICE", id: state.pendingInvoiceId }, "*");
       state.pendingInvoiceId = null;
     }
+    if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceDraft) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_PREFILL_INVOICE", ...state.pendingInvoiceDraft }, "*");
+      state.pendingInvoiceDraft = null;
+    }
     frame.contentWindow.scrollTo(0, 0);
   });
   window.scrollTo(0, 0);
@@ -290,32 +295,26 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (event.source !== frame?.contentWindow) return;
-  if (event.data?.type === "INTERCOL_CREATE_INVOICE_FROM_UTILITIES") {
+  if (event.data?.type === "INTERCOL_OPEN_INVOICE_FROM_UTILITIES") {
     const { customerName, customerId, paymentDay } = event.data;
-    if (!state.currentUser || !state.advisorProfile) {
-      state.pendingSectionId = "utilidades";
-      openSection("acceso");
-      return;
-    }
     const reminderDate = nextInvoiceReminderDate(paymentDay);
     if (!reminderDate) {
       frame.contentWindow.postMessage({ type: "INTERCOL_INVOICE_CREATE_RESULT", ok: false, message: "El día de pago debe estar entre 1 y 31." }, "*");
       return;
     }
-    window.INTERCOL_FIREBASE.createPaymentNotification({
+    state.pendingInvoiceDraft = {
       customerName: String(customerName || "").trim(),
       customerId: String(customerId || "").trim(),
       notificationDate: reminderDate.value,
       paymentDay: Number(paymentDay),
-      advisorUid: state.currentUser.uid,
-      advisorName: state.advisorProfile.asesor
-    }).then(documentRef => {
-      state.pendingInvoiceId = documentRef.id;
-      openSection("notificaciones-pago");
-    }).catch(error => {
-      console.error("No se pudo programar la generación de factura:", error);
-      frame.contentWindow.postMessage({ type: "INTERCOL_INVOICE_CREATE_RESULT", ok: false, message: error.code === "permission-denied" ? "Firebase no permitió guardar. Revisa las reglas de notificacionesPago." : "No se pudo guardar. Revisa la conexión e inténtalo otra vez." }, "*");
-    });
+      paymentDate: reminderDate.paymentDate
+    };
+    if (!state.currentUser || !state.advisorProfile) {
+      state.pendingSectionId = "notificaciones-pago";
+      openSection("acceso");
+      return;
+    }
+    openSection("notificaciones-pago");
     return;
   }
   if (event.data?.type === "INTERCOL_SECTION_READY") {
@@ -324,6 +323,10 @@ window.addEventListener("message", (event) => {
     if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceId) {
       frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_INVOICE", id: state.pendingInvoiceId }, "*");
       state.pendingInvoiceId = null;
+    }
+    if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceDraft) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_PREFILL_INVOICE", ...state.pendingInvoiceDraft }, "*");
+      state.pendingInvoiceDraft = null;
     }
   }
   if (event.data?.type === "INTERCOL_CHECK_INVOICE_ALERTS") fireInvoiceBrowserAlerts();
@@ -341,7 +344,8 @@ function nextInvoiceReminderDate(paymentDay) {
     reminderDate.setDate(reminderDate.getDate() - 10);
     if (reminderDate > now) {
       const value = new Date(reminderDate.getTime() - reminderDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-      return { value, paymentDate };
+      const paymentDateValue = new Date(paymentDate.getTime() - paymentDate.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      return { value, paymentDate: paymentDateValue };
     }
   }
   return null;

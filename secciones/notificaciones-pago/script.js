@@ -5,6 +5,7 @@ const saveButton = document.querySelector("#saveButton");
 const cancelEditButton = document.querySelector("#cancelEdit");
 const alertPermissionButton = document.querySelector("#enableAlerts");
 const dateInput = form.elements.notificationDate;
+const paymentScheduleHint = document.querySelector("#paymentScheduleHint");
 const firebase = window.parent.INTERCOL_FIREBASE;
 let records = [];
 let activeTab = "pending";
@@ -12,6 +13,7 @@ let advisor = null;
 let stopSync = null;
 let busy = false;
 let pendingOpenInvoiceId = null;
+let pendingPaymentDay = null;
 function dateKey(date) { return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 function todayKey() { return dateKey(new Date()); }
 function defaultDateTime() { const value = new Date(); value.setMinutes(value.getMinutes() + 5); value.setSeconds(0,0); return dateKey(value) + "T" + String(value.getHours()).padStart(2,"0") + ":" + String(value.getMinutes()).padStart(2,"0"); }
@@ -21,8 +23,9 @@ function formatDate(value, options = { day:"numeric", month:"long" }) { const is
 function displaySchedule(record, status) { const label = formatDate(record.notificationDate, { day:"numeric", month:"short", year:"numeric", hour:"numeric", minute:"2-digit" }); if (status === "today") return "Hoy · " + label.split(", ").slice(-1)[0]; if (status === "overdue") return "Pendiente · " + label; return label; }
 function reportError(error) { console.error("Error en generación de facturas:", error); formStatus.textContent = error.code === "permission-denied" ? "Firebase bloqueó esta operación. Confirma las reglas de Firestore y que estés usando tu cuenta." : "No se pudo guardar/cargar. Revisa tu conexión e inténtalo de nuevo."; }
 function normalizeRecord(item) { return { id:item.id, customerName:String(item.nombre || ""), customerId:String(item.cedula || ""), notificationDate:String(item.fechaNotificacion || ""), paymentDay:item.diaPago ? Number(item.diaPago) : null, reviewed:Boolean(item.revisado), reviewedAt:item.revisadoEn?.toDate ? item.revisadoEn.toDate().toISOString() : item.revisadoEn || "" }; }
-function resetForm() { form.reset(); form.elements.recordId.value=""; dateInput.value=defaultDateTime(); saveButton.textContent="Agregar verificación"; cancelEditButton.hidden=true; document.querySelector("#formTitle").textContent="Nueva factura por verificar"; }
-function beginEdit(record) { form.elements.recordId.value=record.id; form.elements.customerName.value=record.customerName; form.elements.customerId.value=record.customerId; dateInput.value=/^\d{4}-\d{2}-\d{2}$/.test(record.notificationDate) ? record.notificationDate + "T09:00" : record.notificationDate; saveButton.textContent="Guardar cambios"; cancelEditButton.hidden=false; document.querySelector("#formTitle").textContent="Editar verificación"; formStatus.textContent="Editando a " + record.customerName + "."; form.elements.customerName.focus(); window.scrollTo({top:0,behavior:"smooth"}); }
+function resetForm() { form.reset(); form.elements.recordId.value=""; dateInput.value=defaultDateTime(); pendingPaymentDay=null; paymentScheduleHint.hidden=true; paymentScheduleHint.textContent=""; saveButton.textContent="Agregar verificación"; cancelEditButton.hidden=true; document.querySelector("#formTitle").textContent="Nueva factura por verificar"; }
+function setPaymentSchedule(paymentDay,paymentDate) { pendingPaymentDay=Number(paymentDay)||null; if(!pendingPaymentDay){paymentScheduleHint.hidden=true;paymentScheduleHint.textContent="";return;} const paymentLabel=paymentDate?new Date(paymentDate+"T12:00:00").toLocaleDateString("es-CO",{day:"numeric",month:"long",year:"numeric"}):"día "+pendingPaymentDay; paymentScheduleHint.textContent="Pago programado para "+paymentLabel+". El aviso queda 10 días antes. Revisa los datos y pulsa Agregar verificación para guardarlo.";paymentScheduleHint.hidden=false; }
+function beginEdit(record) { form.elements.recordId.value=record.id; form.elements.customerName.value=record.customerName; form.elements.customerId.value=record.customerId; dateInput.value=/^\d{4}-\d{2}-\d{2}$/.test(record.notificationDate) ? record.notificationDate + "T09:00" : record.notificationDate; setPaymentSchedule(record.paymentDay); saveButton.textContent="Guardar cambios"; cancelEditButton.hidden=false; document.querySelector("#formTitle").textContent="Editar verificación"; formStatus.textContent="Editando a " + record.customerName + "."; form.elements.customerName.focus(); window.scrollTo({top:0,behavior:"smooth"}); }
 function node(tag,className,text) { const element=document.createElement(tag); if(className)element.className=className; if(text!==undefined)element.textContent=text; return element; }
 function makeRecordCard(record,status) {
   const card=node("article","record-card"+(status==="today"?" is-today":"")+(status==="overdue"?" is-overdue":""));
@@ -88,13 +91,14 @@ form.addEventListener("submit",async event=>{
   if(!customerName||!customerId||!notificationDate){formStatus.textContent="Completa el nombre, la cédula y la fecha y hora.";return;}
   if(reminderTime(notificationDate)<=Date.now()){formStatus.textContent="Elige una hora futura para recibir la alerta.";return;}
   if(records.some(row=>row.id!==recordId&&row.customerId.toLowerCase()===customerId.toLowerCase()&&row.notificationDate===notificationDate&&!row.reviewed)){formStatus.textContent="Ya existe una verificación pendiente para esa cédula y fecha y hora.";return;}
-  try{setBusy(true);if(recordId){await firebase.updatePaymentNotification(recordId,{customerName,customerId,notificationDate});formStatus.textContent="Verificación actualizada.";}else{await firebase.createPaymentNotification({customerName,customerId,notificationDate,advisorUid:advisor.uid,advisorName:advisor.asesor});formStatus.textContent="Verificación agregada.";}resetForm();}catch(error){reportError(error);}finally{setBusy(false);}
+  try{setBusy(true);if(recordId){await firebase.updatePaymentNotification(recordId,{customerName,customerId,notificationDate});formStatus.textContent="Verificación actualizada.";}else{await firebase.createPaymentNotification({customerName,customerId,notificationDate,paymentDay:pendingPaymentDay,advisorUid:advisor.uid,advisorName:advisor.asesor});formStatus.textContent="Verificación agregada.";}resetForm();}catch(error){reportError(error);}finally{setBusy(false);}
 });
 cancelEditButton.addEventListener("click",()=>{resetForm();formStatus.textContent="";});
 alertPermissionButton.addEventListener("click",askForAlerts);
 document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>{activeTab=button.dataset.tab;render();}));
 window.addEventListener("message",event=>{
   if(event.data?.type==="INTERCOL_OPEN_INVOICE"){pendingOpenInvoiceId=String(event.data.id||"");scrollToPendingInvoice();}
+  if(event.data?.type==="INTERCOL_PREFILL_INVOICE"){form.elements.customerName.value=String(event.data.customerName||"");form.elements.customerId.value=String(event.data.customerId||"");dateInput.value=String(event.data.notificationDate||"");setPaymentSchedule(event.data.paymentDay,event.data.paymentDate);form.elements.recordId.value="";saveButton.textContent="Agregar verificación";cancelEditButton.hidden=true;document.querySelector("#formTitle").textContent="Nueva factura por verificar";formStatus.textContent="Datos precargados desde Reconexión. Aún no se han guardado.";window.scrollTo({top:0,behavior:"smooth"});}
   if(event.data?.type==="INTERCOL_THEME"){document.documentElement.dataset.theme=event.data.theme;Object.entries(event.data.variables||{}).forEach(([key,value])=>document.documentElement.style.setProperty(key,value));}
   if(event.data?.type==="INTERCOL_AUTH_STATE"){
     if(stopSync){stopSync();stopSync=null;} advisor=event.data.user&&event.data.profile?{uid:event.data.user.uid,asesor:event.data.profile.asesor}:null;records=[];

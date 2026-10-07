@@ -256,8 +256,8 @@ createInvoiceReminderButton.addEventListener("click", () => {
     return;
   }
   createInvoiceReminderButton.disabled = true;
-  invoiceReminderStatus.textContent = "Guardando y calculando el aviso…";
-  window.parent.postMessage({ type: "INTERCOL_CREATE_INVOICE_FROM_UTILITIES", customerName, customerId, paymentDay }, "*");
+  invoiceReminderStatus.textContent = "Abriendo Generación de facturas…";
+  window.parent.postMessage({ type: "INTERCOL_OPEN_INVOICE_FROM_UTILITIES", customerName, customerId, paymentDay }, "*");
 });
 window.addEventListener("message", event => {
   if (event.data?.type !== "INTERCOL_INVOICE_CREATE_RESULT") return;

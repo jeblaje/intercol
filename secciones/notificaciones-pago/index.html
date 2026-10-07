@@ -18,6 +18,7 @@
           <label for="customerName">Nombre del usuario</label><input id="customerName" name="customerName" type="text" autocomplete="name" placeholder="Nombre completo" required>
           <label for="customerId">Cédula</label><input id="customerId" name="customerId" type="text" inputmode="numeric" autocomplete="off" placeholder="Número de cédula" required>
           <label for="notificationDate">Fecha y hora para verificar</label><input id="notificationDate" name="notificationDate" type="datetime-local" required>
+          <p id="paymentScheduleHint" class="form-hint payment-schedule-hint" hidden></p>
           <p class="form-hint">A esa hora aparecerá una alerta del navegador para revisar si se generó la factura.</p>
           <div class="form-actions"><button type="button" class="button secondary" id="cancelEdit" hidden>Cancelar</button><button type="submit" class="button primary" id="saveButton">Agregar verificación</button></div>
           <p id="formStatus" class="form-status" role="status" aria-live="polite"></p>
