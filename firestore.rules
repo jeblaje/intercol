@@ -73,6 +73,25 @@ service cloud.firestore {
           && request.resource.data.correoRecuperacion == request.resource.data.email);
       allow delete: if false;
     }
+    match /loginAliases/{username} {
+      // The login page can resolve a known username, but cannot enumerate usernames.
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/asesores/$(request.auth.uid)).data.usuario == username
+        && request.resource.data.usuario == username
+        && request.resource.data.email is string
+        && request.resource.data.keys().hasOnly(['uid', 'usuario', 'email', 'actualizadoEn']);
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && get(/databases/$(database)/documents/asesores/$(request.auth.uid)).data.usuario == username
+        && request.resource.data.usuario == username
+        && request.resource.data.email is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'usuario', 'email', 'actualizadoEn']);
+      allow delete: if false;
+    }
     match /rolesAsesores/{roleId} {
       allow read: if signedIn();
       allow create: if (roleId != 'administrador' || isSystemAdmin())

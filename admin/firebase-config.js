@@ -29,6 +29,13 @@ async function saveAdvisorProfile(user, advisorName, username, recoveryEmail = "
     // Sync the profile on the next sign-in, when Auth reports the verified address.
     await setDoc(profileRef, { email: verifiedEmail, correoRecuperacion: verifiedEmail }, { merge: true });
   }
+  if (verifiedEmail) await saveUsernameLoginAlias(username || existing.data()?.usuario, user, verifiedEmail);
+}
+function normalizeUsername(username) { return String(username || "").trim().toLowerCase(); }
+function saveUsernameLoginAlias(username, user, email) {
+  const normalized = normalizeUsername(username);
+  if (!/^[a-z0-9._-]{3,30}$/.test(normalized) || !email) return Promise.resolve();
+  return setDoc(doc(firestore, "loginAliases", normalized), { uid: user.uid, usuario: normalized, email: String(email).trim().toLowerCase(), actualizadoEn: serverTimestamp() }, { merge: true });
 }
 export async function registerAdvisor({ advisor, username, email, password }) {
   email = String(email || "").trim().toLowerCase();
@@ -42,8 +49,16 @@ export async function registerAdvisor({ advisor, username, email, password }) {
 }
 export async function signInAdvisor({ username, password }) {
   const identifier = String(username).trim();
-  const credential = await signInWithEmailAndPassword(auth, identifier.includes("@") ? identifier.toLowerCase() : usernameEmail(identifier), password);
-  await saveAdvisorProfile(credential.user, credential.user.displayName || username, username, credential.user.email || "");
+  let loginEmail = identifier.toLowerCase();
+  if (!identifier.includes("@")) {
+    const normalized = normalizeUsername(identifier);
+    const alias = await getDoc(doc(firestore, "loginAliases", normalized));
+    loginEmail = alias.exists() ? String(alias.data().email || "").trim().toLowerCase() : usernameEmail(identifier);
+  }
+  const credential = await signInWithEmailAndPassword(auth, loginEmail, password);
+  const profile = await getAdvisorProfile(credential.user.uid);
+  const storedUsername = profile?.usuario || identifier;
+  await saveAdvisorProfile(credential.user, credential.user.displayName || storedUsername, storedUsername, credential.user.email || "");
   return credential;
 }
 export function sendAdvisorPasswordReset(email) { const address = String(email || "").trim().toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error("Escribe el correo real asociado a tu cuenta."); return sendPasswordResetEmail(auth, address); }
@@ -53,9 +68,13 @@ export async function setAdvisorRecoveryEmail(email) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error("Escribe un correo electrónico válido.");
   if (user.email === address) {
     await setDoc(doc(firestore, "asesores", user.uid), { email: address, correoRecuperacion: address }, { merge: true });
+    const profile = await getAdvisorProfile(user.uid);
+    await saveUsernameLoginAlias(profile?.usuario, user, address);
     return { email: address, verificationRequired: false };
   }
   await verifyBeforeUpdateEmail(user, address);
+  const profile = await getAdvisorProfile(user.uid);
+  await saveUsernameLoginAlias(profile?.usuario, user, address);
   return { email: address, verificationRequired: true };
 }
 export async function changeAdvisorPassword({ currentPassword, newPassword }) {
