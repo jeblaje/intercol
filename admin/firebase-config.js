@@ -1,6 +1,6 @@
 // Configuración e inicialización de Firebase para INTERCOL.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, updatePassword, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where, setDoc } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 export const firebaseConfig = { apiKey: "AIzaSyDK0tK8yptJYD8R6f0VkoiyW2Lekl9KKAQ", authDomain: "intercol-784d9.firebaseapp.com", projectId: "intercol-784d9", storageBucket: "intercol-784d9.firebasestorage.app", messagingSenderId: "380146455867", appId: "1:380146455867:web:2d3b17e736f16ce88a931e" };
 export const firebaseApp = initializeApp(firebaseConfig);
@@ -17,26 +17,54 @@ function usernameEmail(username) {
   if (!/^[a-z0-9._-]{3,30}$/.test(normalized)) throw new Error("El usuario debe tener entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo.");
   return `${normalized}@intercol-784d9.firebaseapp.com`;
 }
-async function saveAdvisorProfile(user, advisorName, username) {
+async function saveAdvisorProfile(user, advisorName, username, recoveryEmail = "") {
   const profileRef = doc(firestore, "asesores", user.uid);
   const existing = await getDoc(profileRef);
+  const isSyntheticEmail = String(user.email || "").toLowerCase().endsWith("@intercol-784d9.firebaseapp.com");
+  const verifiedEmail = !isSyntheticEmail ? String(user.email || recoveryEmail || "").trim().toLowerCase() : "";
   if (!existing.exists()) {
-    await setDoc(profileRef, { uid: user.uid, asesor: advisorName.trim() || user.displayName || username, usuario: username.trim().toLowerCase(), rol: "asesor", creadoEn: serverTimestamp() });
+    await setDoc(profileRef, { uid: user.uid, asesor: advisorName.trim() || user.displayName || username, usuario: username.trim().toLowerCase(), rol: "asesor", ...(verifiedEmail ? { email: verifiedEmail, correoRecuperacion: verifiedEmail } : {}), creadoEn: serverTimestamp() });
+  } else if (verifiedEmail && (existing.data().email !== verifiedEmail || existing.data().correoRecuperacion !== verifiedEmail)) {
+    // Firebase Auth applies the new address only after its verification link is opened.
+    // Sync the profile on the next sign-in, when Auth reports the verified address.
+    await setDoc(profileRef, { email: verifiedEmail, correoRecuperacion: verifiedEmail }, { merge: true });
   }
 }
-export async function registerAdvisor({ advisor, username, password }) {
-  const email = usernameEmail(username);
+export async function registerAdvisor({ advisor, username, email, password }) {
+  email = String(email || "").trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Ingresa un correo electrónico válido para recuperar tu cuenta.");
   const credential = auth.currentUser?.email === email
     ? { user: auth.currentUser }
     : await createUserWithEmailAndPassword(auth, email, password);
   await updateProfile(credential.user, { displayName: advisor.trim() });
-  await saveAdvisorProfile(credential.user, advisor, username);
+  await saveAdvisorProfile(credential.user, advisor, username, email);
   return credential.user;
 }
 export async function signInAdvisor({ username, password }) {
-  const credential = await signInWithEmailAndPassword(auth, usernameEmail(username), password);
-  await saveAdvisorProfile(credential.user, credential.user.displayName || username, username);
+  const identifier = String(username).trim();
+  const credential = await signInWithEmailAndPassword(auth, identifier.includes("@") ? identifier.toLowerCase() : usernameEmail(identifier), password);
+  await saveAdvisorProfile(credential.user, credential.user.displayName || username, username, credential.user.email || "");
   return credential;
+}
+export function sendAdvisorPasswordReset(email) { const address = String(email || "").trim().toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error("Escribe el correo real asociado a tu cuenta."); return sendPasswordResetEmail(auth, address); }
+export async function setAdvisorRecoveryEmail(email) {
+  const user = auth.currentUser; const address = String(email || "").trim().toLowerCase();
+  if (!user) throw new Error("Inicia sesión para actualizar el correo.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error("Escribe un correo electrónico válido.");
+  if (user.email === address) {
+    await setDoc(doc(firestore, "asesores", user.uid), { email: address, correoRecuperacion: address }, { merge: true });
+    return { email: address, verificationRequired: false };
+  }
+  await verifyBeforeUpdateEmail(user, address);
+  return { email: address, verificationRequired: true };
+}
+export async function changeAdvisorPassword({ currentPassword, newPassword }) {
+  const user = auth.currentUser;
+  if (!user?.email) throw new Error("Inicia sesión nuevamente para cambiar la contraseña.");
+  if (String(newPassword || "").length < 6) throw new Error("La contraseña nueva debe tener al menos 6 caracteres.");
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, newPassword);
 }
 export function signOutAdvisor() { return signOut(auth); }
 export async function getAdvisorProfile(uid) { const snapshot = await getDoc(doc(firestore, "asesores", uid)); return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null; }
@@ -117,6 +145,6 @@ export function savePublicSupportConfig(value) {
     actualizadoEn: serverTimestamp()
   });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

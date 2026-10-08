@@ -18,7 +18,44 @@ function formatCedula() {
   const digits = cedulaInput.value.replace(/\D/g, "");
   cedulaOutput.value = digits;
   cedulaCount.textContent = `${digits.length} ${digits.length === 1 ? "dígito" : "dígitos"}`;
+  updateCustomerQuickLinks(digits);
   saveDraft(CEDULA_DRAFT_KEY, cedulaInput.value);
+}
+
+function updateCustomerQuickLinks(cedula) {
+  updateQuickLinks(cedula, [
+    ["onuQuickLink", id => `https://intercolwisp.smartolt.com/onu/configured?free_text=${id}&sort_by=id&sort_order=desc`],
+    ["customerQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/`],
+    ["cleanAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]
+  ]);
+}
+
+function updateQuickLinks(rawCedula, links) {
+  const digits = String(rawCedula || "").replace(/\D/g, "");
+  links.forEach(([id, buildUrl]) => {
+    const link = document.getElementById(id);
+    if (!digits) { link.removeAttribute("href"); link.setAttribute("aria-disabled", "true"); return; }
+    link.href = buildUrl(encodeURIComponent(digits));
+    link.setAttribute("aria-disabled", "false");
+  });
+}
+
+function updateReconnectionQuickLinks(cedula) {
+  updateQuickLinks(cedula, [
+    ["paymentDateQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab5`],
+    ["annotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`],
+    ["paymentHistoryQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab3`]
+  ]);
+}
+
+const managementQuickLinkSets = [
+  { input: "planCustomerId", links: [["planOnuQuickLink", id => `https://intercolwisp.smartolt.com/onu/configured?free_text=${id}&sort_by=id&sort_order=desc`], ["planHistoryQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab3`], ["planAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`], ["planDiscountQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab2`]] },
+  { input: "creditCustomerId", links: [["creditHistoryQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab3`], ["creditAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]] },
+  { input: "holderCustomerId", links: [["holderOnuQuickLink", id => `https://intercolwisp.smartolt.com/onu/configured?free_text=${id}&sort_by=id&sort_order=desc`], ["holderDiscountQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab2`], ["holderFilesQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab6`], ["holderAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]] },
+  { input: "paymentDateCustomerId", links: [["paymentDateSectionQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab5`], ["paymentDateSectionHistoryQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#retab3`], ["paymentDateAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]] }
+];
+function refreshManagementQuickLinks() {
+  managementQuickLinkSets.forEach(({ input, links }) => updateQuickLinks(document.getElementById(input).value, links));
 }
 
 function parseWholePrice(raw) {
@@ -86,10 +123,10 @@ const recordDate = document.querySelector("#recordDate");
 const recordOutput = document.querySelector("#recordOutput");
 const recordStatus = document.querySelector("#recordStatus");
 const recordControls = [
-  "recordType", "planName", "planPrice", "planTechnician", "planAdvisor", "paysMonth",
+  "recordType", "planName", "planPrice", "planCustomerId", "planTechnician", "planAdvisor", "paysMonth",
   "paysAdjustment", "reconnectionCustomerName", "reconnectionCustomerId", "reconnectionTechnician", "paymentDay", "reconnectionAdvisor",
-  "invoiceNumber", "waitingDay", "creditAdvisor", "oldHolder", "newHolder", "holderAdvisor",
-  "newPaymentDay", "paymentDateAdvisor"
+  "invoiceNumber", "waitingDay", "creditCustomerId", "creditAdvisor", "holderCustomerId", "oldHolder", "newHolder", "holderAdvisor",
+  "paymentDateCustomerId", "newPaymentDay", "paymentDateAdvisor"
 ].map(id => document.getElementById(id));
 const planCatalog = {
   general: [
@@ -245,6 +282,14 @@ recordControls.forEach(control => {
   control.addEventListener("input", renderRecord);
   control.addEventListener("change", renderRecord);
 });
+const reconnectionCustomerId = document.querySelector("#reconnectionCustomerId");
+reconnectionCustomerId.addEventListener("input", () => updateReconnectionQuickLinks(reconnectionCustomerId.value));
+updateReconnectionQuickLinks(reconnectionCustomerId.value);
+managementQuickLinkSets.forEach(({ input, links }) => {
+  const field = document.getElementById(input);
+  field.addEventListener("input", () => updateQuickLinks(field.value, links));
+});
+refreshManagementQuickLinks();
 document.querySelector("#copyRecord").addEventListener("click", () => copyValue(recordOutput, recordStatus));
 const createInvoiceReminderButton = document.querySelector("#createInvoiceReminder");
 const invoiceReminderStatus = document.querySelector("#invoiceReminderStatus");
@@ -271,6 +316,8 @@ document.querySelector("#clearRecord").addEventListener("click", () => {
     else if (control.id === "recordType") control.value = "plan";
     else control.value = "";
   });
+  updateReconnectionQuickLinks("");
+  refreshManagementQuickLinks();
   delete document.querySelector("#planName").dataset.selectedPlanId;
   try { localStorage.removeItem(RECORD_DRAFT_KEY); } catch { /* Ignore unavailable storage. */ }
   renderRecord();
@@ -310,10 +357,12 @@ try {
   if (savedDebtor) Object.entries(savedDebtor).forEach(([name, value]) => { if (debtorForm.elements[name]) debtorForm.elements[name].value = value; });
 } catch { /* Ignore invalid saved data and start with an empty form. */ }
 debtorForm.addEventListener("input", renderDebtorOutput);
+debtorForm.elements.cedula.addEventListener("input", () => updateQuickLinks(debtorForm.elements.cedula.value, [["debtorAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]]));
 document.querySelector("#copyDebtor").addEventListener("click", () => copyValue(debtorOutput, document.querySelector("#copyStatus")));
 document.querySelector("#clearDebtor").addEventListener("click", () => {
   debtorForm.reset();
   debtorOutput.value = "";
+  updateQuickLinks("", [["debtorAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]]);
   try { localStorage.removeItem(DEBTOR_DRAFT_KEY); } catch { /* Ignore unavailable storage. */ }
   document.querySelector("#formStatus").textContent = "Formulario limpiado.";
   document.querySelector("#copyStatus").textContent = "";
@@ -321,4 +370,5 @@ document.querySelector("#clearDebtor").addEventListener("click", () => {
 });
 renderRecord();
 renderDebtorOutput();
+updateQuickLinks(debtorForm.elements.cedula.value, [["debtorAnnotationsQuickLink", id => `https://wisphub.net/clientes/ver/${id}@cibercitywisp/#set1`]]);
 window.addEventListener("load", resizeSection);

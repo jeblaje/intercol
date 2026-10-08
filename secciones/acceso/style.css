@@ -2,3 +2,4 @@
 
 
 .password-field{position:relative}.password-field input{padding-right:82px}.password-toggle{position:absolute;top:5px;right:6px;height:33px;padding:0 9px;border:0;border-radius:7px;background:var(--primary-soft);color:var(--primary);cursor:pointer;font-size:10px;font-weight:750}.password-toggle:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.text-link{display:block;margin:14px auto 0;padding:4px;border:0;background:transparent;color:var(--primary);font:inherit;font-size:11px;font-weight:700;cursor:pointer}.text-link:hover{text-decoration:underline}

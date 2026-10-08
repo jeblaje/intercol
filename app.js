@@ -67,7 +67,7 @@ function broadcastTheme() {
 }
 
 function isSystemAdminAccount(user = state.currentUser) {
-  return String(user?.email || "").toLowerCase() === "jeblaje@intercol-784d9.firebaseapp.com";
+  return user?.uid === "INJQ1NtkRwRbxfLN2XCwF22flyu2" || String(user?.email || "").toLowerCase() === "jeblaje@intercol-784d9.firebaseapp.com";
 }
 
 function canViewSection(sectionId) {
@@ -318,6 +318,7 @@ function renderSettings() {
       <div class="setting-row"><div><strong>Tema oscuro</strong><p>Cambia colores, superficies y textos de toda la experiencia.</p></div><button class="toggle ${state.theme === "dark" ? "on" : ""}" id="settingsTheme" aria-label="Alternar tema"></button></div>
       <div class="setting-row"><div><strong>Arquitectura por secciones</strong><p>El dashboard no contiene el HTML interno de las herramientas.</p></div><span class="session-badge">Activo</span></div>
     </div></section>
+    ${state.currentUser ? `<section class="panel"><div class="panel-header"><div><h3>Seguridad de la cuenta</h3><span>Usa un correo real para recuperar el acceso.</span></div></div><div class="panel-body settings-list"><form id="recoveryEmailForm" class="account-security-form"><label for="accountRecoveryEmail">Correo de recuperación</label><div class="security-input-row"><input id="accountRecoveryEmail" name="email" type="email" value="${escapeAttribute(state.currentUser.email?.endsWith("@intercol-784d9.firebaseapp.com") ? "" : state.currentUser.email || "")}" placeholder="nombre@correo.com" autocomplete="email" required><button class="secondary-button" type="submit">Guardar correo</button></div><small id="recoveryEmailStatus" class="inline-status" role="status"></small></form><form id="changePasswordForm" class="account-security-form"><strong>Cambiar contraseña</strong><div class="security-input-row"><input name="currentPassword" type="password" placeholder="Contraseña actual" autocomplete="current-password" required><input name="newPassword" type="password" placeholder="Nueva contraseña (mín. 6 caracteres)" autocomplete="new-password" minlength="6" required><input name="confirmPassword" type="password" placeholder="Repite la contraseña nueva" autocomplete="new-password" minlength="6" required><button class="secondary-button" type="submit">Cambiar contraseña</button></div><small id="changePasswordStatus" class="inline-status" role="status"></small></form></div></section>` : ""}
     <section class="panel settings-team-panel"><div class="panel-header"><div><h3>Equipos y contactos</h3><span>Lista compartida que también aparece en el dashboard. No requiere iniciar sesión.</span></div></div>
       <form class="panel-body support-config-form" id="supportConfigForm">
         <fieldset class="support-config-group"><legend>Técnicos de soporte</legend><div class="support-config-grid">
@@ -334,6 +335,35 @@ function renderSettings() {
   $("#supportConfigForm").addEventListener("input", event => { event.currentTarget.dataset.dirty = "true"; });
   $("#supportConfigForm").addEventListener("submit", saveSupportConfig);
   $("#settingsTheme").addEventListener("click", toggleTheme);
+  $("#recoveryEmailForm")?.addEventListener("submit", saveRecoveryEmail);
+  $("#changePasswordForm")?.addEventListener("submit", changeAccountPassword);
+}
+
+async function saveRecoveryEmail(event) {
+  event.preventDefault(); const form = event.currentTarget; const button = form.querySelector("button"); const status = $("#recoveryEmailStatus"); const firebase = window.INTERCOL_FIREBASE;
+  button.disabled = true; status.textContent = "Actualizando correo…";
+  try {
+    const result = await firebase.setAdvisorRecoveryEmail(form.elements.email.value);
+    const email = result.email;
+    if (result.verificationRequired) {
+      status.textContent = `Enviamos un enlace de verificación a ${email}. Ábrelo para cambiar el correo y luego inicia sesión con la nueva dirección.`;
+    } else {
+      state.currentUser.email = email; state.advisorProfile = { ...(state.advisorProfile || {}), email, correoRecuperacion: email };
+      status.textContent = "Este correo ya está asociado a tu cuenta y quedó guardado para la recuperación.";
+    }
+  } catch (error) {
+    console.error("No se pudo actualizar el correo de recuperación:", error);
+    status.textContent = error.code === "auth/requires-recent-login" ? "Por seguridad, cierra sesión e inicia nuevamente antes de cambiar el correo." : error.code === "auth/email-already-in-use" ? "Ese correo ya está asociado a otra cuenta." : error.code === "permission-denied" ? "Firebase bloqueó guardar el correo en el perfil. Publica las reglas actualizadas." : error.message || "No se pudo actualizar el correo.";
+  } finally { button.disabled = false; }
+}
+
+async function changeAccountPassword(event) {
+  event.preventDefault(); const form = event.currentTarget; const button = form.querySelector("button"); const status = $("#changePasswordStatus"); const currentPassword = form.elements.currentPassword.value; const newPassword = form.elements.newPassword.value;
+  if (newPassword !== form.elements.confirmPassword.value) { status.textContent = "Las contraseñas nuevas no coinciden."; return; }
+  button.disabled = true; status.textContent = "Actualizando contraseña…";
+  try { await window.INTERCOL_FIREBASE.changeAdvisorPassword({ currentPassword, newPassword }); form.reset(); status.textContent = "Contraseña actualizada."; }
+  catch (error) { console.error("No se pudo cambiar la contraseña:", error); status.textContent = error.code === "auth/wrong-password" || error.code === "auth/invalid-credential" ? "La contraseña actual no es correcta." : error.code === "auth/weak-password" ? "La contraseña nueva debe tener al menos 6 caracteres." : error.message || "No se pudo cambiar la contraseña."; }
+  finally { button.disabled = false; }
 }
 
 async function saveSupportConfig(event) {

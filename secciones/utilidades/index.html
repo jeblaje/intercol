@@ -18,6 +18,7 @@
         <textarea id="cedulaInput" rows="3" placeholder="Ej. cc16515561 o 1.151.15.135"></textarea>
         <div class="tool-result"><label class="field-label" for="cedulaOutput">Solo números <span id="cedulaCount">0 dígitos</span></label><div class="result-row"><input id="cedulaOutput" type="text" readonly placeholder="Escribe o pega una cédula arriba"><button type="button" class="copy-button" id="copyCedula">Copiar</button></div></div>
         <div class="tool-actions"><button type="button" class="clear-button" id="clearCedula">Limpiar</button><span id="cedulaStatus" class="tool-status" role="status" aria-live="polite"></span></div>
+        <nav class="quick-links" aria-label="Enlaces rápidos del cliente"><span>Enlaces rápidos</span><a id="onuQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ONU ↗</a><a id="customerQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">VER CLIENTE ↗</a><a id="cleanAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a></nav>
       </article>
       <article class="utility-card utility-tool" aria-labelledby="priceTitle">
         <header class="tool-heading"><div><span class="tool-number">02</span><h2 id="priceTitle">Formatear valor</h2><p>Convierte el número a pesos colombianos, sin decimales.</p></div></header>
@@ -33,6 +34,8 @@
         <div class="date-display"><span>Fecha</span><strong id="recordDate"></strong></div>
         <div id="planFields" class="record-fields">
           <input id="planName" type="hidden"><input id="planPrice" type="hidden">
+          <label class="field-label" for="planCustomerId">Cédula</label><input id="planCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula">
+          <nav class="quick-links" aria-label="Enlaces rápidos de cambio de plan"><span>Enlaces rápidos</span><a id="planOnuQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ONU ↗</a><a id="planHistoryQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">HISTORIAL DE PAGO ↗</a><a id="planAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a><a id="planDiscountQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">DESCUENTOS ↗</a></nav>
           <div class="plan-group special-plans"><h3>Planes especiales</h3><div id="specialPlanChoices" class="plan-options"></div></div>
           <div class="plan-group general-plans"><h3>Planes generales</h3><div id="generalPlanChoices" class="plan-options"></div></div>
           <div class="selected-plan" id="selectedPlanText">Selecciona un plan</div>
@@ -42,6 +45,7 @@
         <div id="reconnectionFields" class="record-fields" hidden>
           <label class="field-label" for="reconnectionCustomerName">Nombre del usuario</label><input id="reconnectionCustomerName" type="text" placeholder="Nombre completo">
           <label class="field-label" for="reconnectionCustomerId">Cédula</label><input id="reconnectionCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula">
+          <nav class="quick-links reconnection-quick-links" aria-label="Enlaces rápidos de reconexión"><span>Enlaces rápidos</span><a id="paymentDateQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">FECHA DE PAGO ↗</a><a id="annotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a><a id="paymentHistoryQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">HISTORIAL DE PAGO ↗</a></nav>
           <fieldset class="payment-options"><legend>¿Qué paga?</legend><label><input id="paysMonth" type="checkbox"> Mes</label><label><input id="paysAdjustment" type="checkbox"> Reajuste</label></fieldset>
           <label class="field-label" for="reconnectionTechnician">Técnico</label><input id="reconnectionTechnician" type="text" placeholder="Nombre del técnico">
           <label class="field-label" for="paymentDay">Fecha de pago (día del mes)</label><input id="paymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 1">
@@ -51,16 +55,19 @@
           <span id="invoiceReminderStatus" class="tool-status" role="status" aria-live="polite"></span>
         </div>
         <div id="creditFields" class="record-fields" hidden>
+          <label class="field-label" for="creditCustomerId">Cédula</label><input id="creditCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula"><nav class="quick-links" aria-label="Enlaces del cliente"><span>Enlaces rápidos</span><a id="creditHistoryQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">HISTORIAL DE PAGO ↗</a><a id="creditAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a></nav>
           <label class="field-label" for="invoiceNumber">Número de factura</label><input id="invoiceNumber" type="text" inputmode="numeric" placeholder="Ej. 507397">
           <label class="field-label" for="waitingDay">Día de espera</label><input id="waitingDay" type="number" min="1" max="31" step="1" placeholder="Ej. 16">
           <label class="field-label" for="creditAdvisor">Asesor</label><input id="creditAdvisor" type="text" placeholder="Nombre del asesor">
         </div>
         <div id="holderFields" class="record-fields" hidden>
+          <label class="field-label" for="holderCustomerId">Cédula del cliente actual</label><input id="holderCustomerId" type="text" inputmode="numeric" placeholder="Cédula para consultar el cliente"><nav class="quick-links" aria-label="Enlaces del cliente"><span>Enlaces rápidos</span><a id="holderOnuQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ONU ↗</a><a id="holderDiscountQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">DESCUENTOS ↗</a><a id="holderFilesQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ARCHIVOS ↗</a><a id="holderAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a></nav>
           <label class="field-label" for="oldHolder">Titular antiguo (nombre y cédula)</label><input id="oldHolder" type="text" placeholder="Ej. Cielo Luz Montero Nieves 49716169">
           <label class="field-label" for="newHolder">Titular nuevo (nombre y cédula)</label><input id="newHolder" type="text" placeholder="Ej. Diana Rosa Herazo Vergara 1066878935">
           <label class="field-label" for="holderAdvisor">Asesor</label><input id="holderAdvisor" type="text" placeholder="Nombre del asesor">
         </div>
         <div id="paymentDateFields" class="record-fields" hidden>
+          <label class="field-label" for="paymentDateCustomerId">Cédula</label><input id="paymentDateCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula"><nav class="quick-links" aria-label="Enlaces del cliente"><span>Enlaces rápidos</span><a id="paymentDateSectionQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">FECHA DE PAGO ↗</a><a id="paymentDateSectionHistoryQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">HISTORIAL DE PAGO ↗</a><a id="paymentDateAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a></nav>
           <label class="field-label" for="newPaymentDay">Día de pago (del mes)</label><input id="newPaymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 25">
           <label class="field-label" for="paymentDateAdvisor">Asesor</label><input id="paymentDateAdvisor" type="text" placeholder="Nombre del asesor">
         </div>
@@ -71,7 +78,7 @@
         <header class="tool-heading"><div><span class="tool-number">04</span><h2 id="debtorTitle">Datos moroso</h2><p>Completa los campos que necesites y copia el resultado para enviar.</p></div></header>
         <form id="debtorForm" autocomplete="off">
           <label>Nombre<input name="name" placeholder="Nombre completo"></label>
-          <label>Cédula<input name="cedula" inputmode="numeric" placeholder="Número de cédula"></label>
+          <label>Cédula<input name="cedula" inputmode="numeric" placeholder="Número de cédula"></label><nav class="quick-links" aria-label="Enlaces del cliente"><span>Enlaces rápidos</span><a id="debtorAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a></nav>
           <label>Teléfono(s)<input name="phones" placeholder="Separa varios teléfonos con coma"></label>
           <label>Dirección<input name="address" placeholder="Dirección"></label>
           <label>Barrio<input name="neighborhood" placeholder="Barrio"></label>

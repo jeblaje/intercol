@@ -1,4 +1,5 @@
 const ADMIN_EMAIL = "jeblaje@intercol-784d9.firebaseapp.com";
+const ADMIN_UID = "INJQ1NtkRwRbxfLN2XCwF22flyu2";
 const views = { dashboard: "Dashboard", advisors: "Asesores", sections: "Secciones", permissions: "Roles y permisos" };
 const state = { firebase: null, user: null, profile: null, advisors: [], roles: [], view: "dashboard", selectedAdvisor: "", selectedRole: "asesor", roleDraft: false, roleEditorOpen: false, expandedRoleId: "", busy: false, isSystemAdmin: false, roleAdminPermissions: {} };
 const $ = selector => document.querySelector(selector);
@@ -17,12 +18,20 @@ function setStatus(text, error = false) { const status = $("#adminStatus"); stat
 function renderLogin() {
   document.body.classList.add("admin-auth-only");
   $("#adminSignOut").hidden = true;
-  host.innerHTML = `<section class="login-card"><span class="eyebrow">ACCESO ADMINISTRATIVO</span><h2>Iniciar sesión</h2><p>Usa tu cuenta de asesor. Solo la cuenta autorizada puede administrar INTERCOL.</p><form id="adminLoginForm"><label for="adminUsername">Nombre de usuario</label><input id="adminUsername" name="username" autocomplete="username" required><label for="adminPassword">Contraseña</label><input id="adminPassword" name="password" type="password" autocomplete="current-password" required><button class="primary-button" type="submit">Continuar</button><p class="inline-status" id="loginStatus" role="status"></p></form></section>`;
+  host.innerHTML = `<section class="login-card"><span class="eyebrow">ACCESO ADMINISTRATIVO</span><h2>Iniciar sesión</h2><p>Usa tu correo real o, si tu cuenta es antigua, tu nombre de usuario.</p><form id="adminLoginForm"><label for="adminUsername">Usuario o correo electrónico</label><input id="adminUsername" name="username" autocomplete="username" maxlength="254" required><label for="adminPassword">Contraseña</label><input id="adminPassword" name="password" type="password" autocomplete="current-password" required><button class="primary-button" type="submit">Continuar</button><button class="admin-reset-link" id="adminForgotPassword" type="button">¿Olvidaste tu contraseña?</button><p class="inline-status" id="loginStatus" role="status"></p></form></section>`;
   $("#adminLoginForm").addEventListener("submit", async event => {
     event.preventDefault(); const form = event.currentTarget; const status = $("#loginStatus"); const button = form.querySelector("button[type=submit]");
     button.disabled = true; status.textContent = "Conectando con Firebase…";
     try { await state.firebase.signInAdvisor({ username: form.elements.username.value.trim(), password: form.elements.password.value }); }
     catch (error) { status.textContent = error.code === "auth/invalid-credential" ? "Usuario o contraseña incorrectos." : error.message || "No se pudo iniciar sesión."; button.disabled = false; }
+  });
+  $("#adminForgotPassword").addEventListener("click", async () => {
+    const email = $("#adminUsername").value.trim(); const status = $("#loginStatus");
+    if (!email.includes("@")) { status.textContent = "Escribe el correo real asociado a la cuenta."; return; }
+    const button = $("#adminForgotPassword"); button.disabled = true; status.textContent = "Enviando enlace…";
+    try { await state.firebase.sendAdvisorPasswordReset(email); status.textContent = "Si el correo pertenece a una cuenta, Firebase enviará el enlace de recuperación."; }
+    catch (error) { status.textContent = error.code === "auth/user-not-found" ? "No se encontró una cuenta con ese correo. Las cuentas antiguas deben asociar un correo real desde una sesión abierta." : error.message || "No se pudo enviar el enlace."; }
+    finally { button.disabled = false; }
   });
 }
 function renderUnauthorized() {
@@ -233,7 +242,7 @@ async function handleUser(user) {
   state.user = user || null; state.profile = null; state.isSystemAdmin = false; state.roleAdminPermissions = {};
   if (!user) { setStatus("Inicia sesión para continuar"); renderLogin(); return; }
   $("#adminSignOut").hidden = false;
-  state.isSystemAdmin = String(user.email || "").toLowerCase() === ADMIN_EMAIL;
+  state.isSystemAdmin = user.uid === ADMIN_UID || String(user.email || "").toLowerCase() === ADMIN_EMAIL;
   if (!state.isSystemAdmin) { setStatus("Cuenta sin permisos para administrar el sistema", true); renderUnauthorized(); return; }
   try { state.profile = await state.firebase.getAdvisorProfile(user.uid); } catch { state.profile = null; }
   if (!state.isSystemAdmin && state.profile) {
