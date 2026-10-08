@@ -196,7 +196,7 @@ async function loadData() {
     const errorCode = error?.code || "error";
     const isDenied = errorCode === "permission-denied";
     const detail = isDenied
-      ? `Firestore denegó el paso «${loadStep}» (${errorCode}). Verifica que publicaste las reglas en el proyecto intercol-784d9 y que la cuenta administradora sea jeblaje@intercol-784d9.firebaseapp.com.`
+      ? `Firestore denegó el paso «${loadStep}» (${errorCode}). Publica las reglas actualizadas en el proyecto intercol-784d9; deben reconocer como administrador el UID de la cuenta o el rol Administrador del perfil.`
       : `Falló el paso «${loadStep}» (${errorCode}): ${error?.message || "Revisa la conexión."}`;
     setStatus(isDenied ? `Firebase denegó: ${loadStep}.` : `Error al ${loadStep} (${errorCode}).`, true);
     host.innerHTML = `<section class="empty-panel"><div class="empty-icon">!</div><h2>No se pudieron cargar los datos</h2><p>${escapeHtml(detail)}</p></section>`;
@@ -242,9 +242,16 @@ async function handleUser(user) {
   state.user = user || null; state.profile = null; state.isSystemAdmin = false; state.roleAdminPermissions = {};
   if (!user) { setStatus("Inicia sesión para continuar"); renderLogin(); return; }
   $("#adminSignOut").hidden = false;
-  state.isSystemAdmin = user.uid === ADMIN_UID || String(user.email || "").toLowerCase() === ADMIN_EMAIL;
-  if (!state.isSystemAdmin) { setStatus("Cuenta sin permisos para administrar el sistema", true); renderUnauthorized(); return; }
   try { state.profile = await state.firebase.getAdvisorProfile(user.uid); } catch { state.profile = null; }
+  let assignedRole = null;
+  if (state.profile?.rol) {
+    try { assignedRole = await state.firebase.getAdvisorRolePermissions(state.profile.rol); }
+    catch (error) { console.error("No se pudo consultar el rol asignado:", error); }
+  }
+  state.isSystemAdmin = user.uid === ADMIN_UID
+    || String(user.email || "").toLowerCase() === ADMIN_EMAIL
+    || String(state.profile?.rol || "").toLowerCase() === "administrador"
+    || String(assignedRole?.nombre || "").trim().toLowerCase() === "administrador";
   if (!state.isSystemAdmin && state.profile) {
     try {
       const roleId = state.profile.rol || "asesor";

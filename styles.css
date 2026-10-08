@@ -80,6 +80,9 @@ button { cursor: pointer; }
 .profile-copy strong, .profile-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-copy strong { font-size: 11px; }
 .profile-copy span { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.profile-copy .workspace-role-link { display: block; max-width: 100%; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: 9px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.profile-copy .workspace-role-link.is-admin { color: var(--primary); cursor: pointer; font-weight: 700; }
+.profile-copy .workspace-role-link.is-admin:hover, .profile-copy .workspace-role-link.is-admin:focus-visible { color: var(--text); text-decoration: underline; }
 
 .icon-button { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--muted); }
 .icon-button:hover { color: var(--text); background: var(--surface-2); }

@@ -146,6 +146,27 @@ export function createVerifiedBox(data) {
   };
   return addDoc(verifiedBoxes, record);
 }
+export function updateVerifiedBox(id, data) {
+  const cedulas = Array.from(data.cedulas || [], user => ({
+    cedula: String(user.cedula ?? ""),
+    puertoTecnico: Number(user.puertoTecnico),
+    puertoReal: Number(user.puertoReal),
+    comentario: String(user.comentario ?? ""),
+    fondoNaranja: Boolean(user.fondoNaranja)
+  }));
+  return updateDoc(doc(firestore, "cajasVerificadas", id), {
+    fecha: String(data.fecha ?? ""),
+    tipoCaja: String(data.tipoCaja ?? ""),
+    numeroCaja: String(data.numeroCaja ?? ""),
+    direccion: String(data.direccion ?? ""),
+    tecnico: String(data.tecnico ?? ""),
+    asesor: String(data.asesor ?? ""),
+    link: String(data.link ?? ""),
+    cedulas,
+    actualizadoEn: serverTimestamp()
+  });
+}
+export function deleteVerifiedBox(id) { return deleteDoc(doc(firestore, "cajasVerificadas", id)); }
 export function subscribeVerifiedBoxes(onChange, onError) { return onSnapshot(verifiedBoxes, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 export function subscribePublicSupportConfig(onChange, onError) { return onSnapshot(publicSupportConfig, snapshot => onChange(snapshot.exists() ? snapshot.data() : null), onError); }
 export function savePublicSupportConfig(value) {
@@ -164,6 +185,6 @@ export function savePublicSupportConfig(value) {
     actualizadoEn: serverTimestamp()
   });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, deleteVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

@@ -22,9 +22,10 @@ const BOX_DRAFT_KEY = "intercol_verificar_caja_draft_v1";
 const users = [];
 let selectedId = null;
 let pendingOnuUsers = [];
-let advisorAuth = { user: null, profile: null };
+let advisorAuth = { user: null, profile: null, isAdmin: false };
 let verifiedBoxes = [];
 let stopVerifiedBoxSync = null;
+let editingVerifiedBoxId = null;
 const onuUrl = cedula => `https://intercolwisp.smartolt.com/onu/configured?free_text=${encodeURIComponent(cedula)}&sort_by=id&sort_order=desc`;
 const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponent(cedula)}@cibercitywisp/#set1`;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -59,6 +60,8 @@ function syncVerifiedBoxes() {
     verifiedCount.textContent = `${verifiedBoxes.length} caja${verifiedBoxes.length === 1 ? "" : "s"}`;
     verifiedStatus.textContent = verifiedBoxes.length ? "Selecciona una caja para consultar su ficha." : "Aún no hay cajas verificadas.";
     renderVerifiedBoxes();
+    const selectedBox = verifiedBoxes.find(box => box.id === verifiedDetail.dataset.boxId);
+    if (selectedBox) showVerifiedBox(selectedBox);
   }, error => {
     console.error("No se pudieron cargar las cajas verificadas:", error);
     verifiedCount.textContent = "Error";
@@ -115,8 +118,66 @@ function showVerifiedBox(box) {
     const flagged = Boolean(user.fondoNaranja);
     return `<article class="verified-port ${flagged ? "orange-marked" : ""}"><div class="verified-port-identity"><strong>${escapeHtml(user.cedula || "")}</strong>${flagged ? '<span class="orange-flag">Fondo naranja</span>' : ""}</div><div class="verified-port-data"><span>Puerto (lista del técnico): <b>${escapeHtml(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPortLabel(realPort, box.tipoCaja)}</b></span></div>${user.comentario ? `<p>${escapeHtml(user.comentario)}</p>` : ""}</article>`;
   }).join("");
-  verifiedDetail.innerHTML = `<div class="verified-ficha"><div class="verified-ficha-heading"><div><span class="detail-kicker">FICHA DE CAJA VERIFICADA</span><h3>${escapeHtml(box.numeroCaja || "Sin número")}</h3></div>${safeLink ? `<a class="secondary verified-filter-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : ""}</div><dl class="detail-data"><div><dt>Fecha</dt><dd>${escapeHtml(formatBoxDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${escapeHtml(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(box.tecnico || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(box.asesor || "—")}</dd></div></dl><h4>Puertos e identificaciones</h4><div class="verified-port-list">${usersMarkup || '<p class="verified-status">No se guardaron puertos.</p>'}</div></div>`;
+  const canEdit = Boolean(advisorAuth.user && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
+  const actions = canEdit ? `<div class="verified-record-actions"><button type="button" class="secondary" id="editVerifiedBox">Editar caja</button><button type="button" class="danger" id="deleteVerifiedBox">Eliminar caja</button></div>` : "";
+  verifiedDetail.innerHTML = `<div class="verified-ficha"><div class="verified-ficha-heading"><div><span class="detail-kicker">FICHA DE CAJA VERIFICADA</span><h3>${escapeHtml(box.numeroCaja || "Sin número")}</h3></div>${safeLink ? `<a class="secondary verified-filter-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : ""}</div>${actions}<dl class="detail-data"><div><dt>Fecha</dt><dd>${escapeHtml(formatBoxDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${escapeHtml(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(box.tecnico || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(box.asesor || "—")}</dd></div></dl><h4>Puertos e identificaciones</h4><div class="verified-port-list">${usersMarkup || '<p class="verified-status">No se guardaron puertos.</p>'}</div></div>`;
+  document.querySelector("#editVerifiedBox")?.addEventListener("click", () => beginVerifiedBoxEdit(box));
+  document.querySelector("#deleteVerifiedBox")?.addEventListener("click", () => removeVerifiedBox(box));
   renderVerifiedBoxes();
+}
+
+function canManageVerifiedBox(box) {
+  return Boolean(advisorAuth.user && box && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
+}
+
+function beginVerifiedBoxEdit(box) {
+  if (!canManageVerifiedBox(box)) return;
+  const fields = boxForm.elements;
+  fields.date.value = String(box.fecha || "");
+  Array.from(fields.boxType).forEach(input => { input.checked = input.value === box.tipoCaja; });
+  fields.boxNumber.value = String(box.numeroCaja || "");
+  fields.address.value = String(box.direccion || "");
+  fields.technician.value = String(box.tecnico || "");
+  fields.advisor.value = String(box.asesor || "");
+  fields.link.value = String(box.link || "");
+  users.splice(0, users.length, ...(Array.isArray(box.cedulas) ? box.cedulas : []).map((user, index) => ({
+    id: `saved-${box.id}-${index}`,
+    cedula: String(user.cedula || ""),
+    port: Number(user.puertoReal) || Number(user.puertoTecnico) || 1,
+    listOrder: Number(user.puertoTecnico) || index + 1,
+    comment: String(user.comentario || ""),
+    orangeBackground: Boolean(user.fondoNaranja)
+  })));
+  selectedId = users[0]?.id || null;
+  editingVerifiedBoxId = box.id;
+  markBoxVerifiedButton.textContent = "Guardar cambios";
+  copyStatus.textContent = `Editando ${box.numeroCaja || "la caja verificada"}. Guarda los cambios con el botón “Guardar cambios”.`;
+  if (selectedId) selectUser(selectedId);
+  else detailPanel.innerHTML = '<div class="detail-placeholder"><span class="detail-icon">⌕</span><strong>Aún no hay cédulas</strong><p>Agrega las identificaciones de la caja.</p></div>';
+  renderList();
+  updateStatus();
+  boxForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelector("#boxNumber").focus({ preventScroll: true });
+}
+
+async function removeVerifiedBox(box) {
+  if (!canManageVerifiedBox(box)) return;
+  if (!window.confirm(`¿Eliminar la caja ${box.numeroCaja || "sin número"}? Esta acción no se puede deshacer.`)) return;
+  const firebase = window.parent.INTERCOL_FIREBASE;
+  if (!firebase?.deleteVerifiedBox) { verifiedStatus.textContent = "Firebase todavía no está listo. Recarga la página e inténtalo de nuevo."; return; }
+  verifiedStatus.textContent = "Eliminando caja…";
+  try {
+    await firebase.deleteVerifiedBox(box.id);
+    if (editingVerifiedBoxId === box.id) resetBoxForm();
+    if (verifiedDetail.dataset.boxId === box.id) {
+      delete verifiedDetail.dataset.boxId;
+      verifiedDetail.innerHTML = '<div class="detail-placeholder"><span class="detail-icon">▤</span><strong>Caja eliminada</strong><p>Selecciona otra caja para consultar su ficha.</p></div>';
+    }
+    verifiedStatus.textContent = "Caja eliminada.";
+  } catch (error) {
+    console.error("No se pudo eliminar la caja verificada:", error);
+    verifiedStatus.textContent = error?.code === "permission-denied" ? "Firestore no autorizó eliminar esta caja. Solo su creador o un administrador pueden hacerlo." : `No se pudo eliminar la caja: ${error?.message || "Revisa la conexión."}`;
+  }
 }
 
 function safeFilterLink(value) {
@@ -161,6 +222,7 @@ function updateStatus() {
   const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.technician.trim() && data.advisor.trim();
   statusText.textContent = ready ? `${data.boxType.toUpperCase()} · ${users.length} cédula${users.length === 1 ? "" : "s"}` : "Completa los datos de la caja";
   markBoxVerifiedButton.disabled = !ready || !users.length;
+  markBoxVerifiedButton.textContent = editingVerifiedBoxId ? "Guardar cambios" : "Caja verificada";
   updateSheetRows();
   saveBoxDraft();
 }
@@ -173,7 +235,7 @@ async function saveVerifiedBox() {
   const firebase = window.parent.INTERCOL_FIREBASE;
   const authUser = advisorAuth.user || firebase?.auth?.currentUser;
   if (!authUser) { requestAdvisorLogin(); return; }
-  if (!firebase?.createVerifiedBox || !firebase?.getAdvisorProfile) {
+  if ((!editingVerifiedBoxId && !firebase?.createVerifiedBox) || (editingVerifiedBoxId && !firebase?.updateVerifiedBox) || !firebase?.getAdvisorProfile) {
     verifiedStatus.textContent = "Firebase todavía no está listo. Recarga la página e inténtalo de nuevo.";
     return;
   }
@@ -184,7 +246,7 @@ async function saveVerifiedBox() {
   markBoxVerifiedButton.disabled = true;
   markBoxVerifiedButton.textContent = "Guardando…";
   try {
-    await firebase.createVerifiedBox({
+    const verifiedBoxData = {
       fecha: data.date,
       tipoCaja: data.boxType,
       numeroCaja: data.boxNumber.trim(),
@@ -202,8 +264,17 @@ async function saveVerifiedBox() {
         comentario: String(user.comment || ""),
         fondoNaranja: Boolean(user.orangeBackground)
       }))
-    });
-    verifiedStatus.textContent = "Caja verificada y guardada para todos los asesores.";
+    };
+    if (editingVerifiedBoxId) {
+      const box = verifiedBoxes.find(item => item.id === editingVerifiedBoxId);
+      if (!canManageVerifiedBox(box)) throw new Error("No tienes permiso para editar esta caja.");
+      await firebase.updateVerifiedBox(editingVerifiedBoxId, verifiedBoxData);
+      verifiedStatus.textContent = "Cambios guardados. La ficha se actualizó para todos los asesores.";
+    } else {
+      await firebase.createVerifiedBox(verifiedBoxData);
+      verifiedStatus.textContent = "Caja verificada y guardada para todos los asesores.";
+    }
+    resetBoxForm();
     document.querySelector("#verifiedTitle").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     console.error("No se pudo guardar la caja verificada:", error);
@@ -214,9 +285,24 @@ async function saveVerifiedBox() {
         ? `No se pudo guardar (${errorCode}): ${error?.message || "Revisa la conexión con Firebase."}`
         : `No se pudo guardar: ${error?.message || "Comprueba tu conexión e inténtalo de nuevo."}`;
   } finally {
-    markBoxVerifiedButton.textContent = "Caja verificada";
     updateStatus();
   }
+}
+
+function resetBoxForm() {
+  boxForm.reset();
+  const resetToday = new Date();
+  dateField.value = new Date(resetToday.getTime() - resetToday.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  users.length = 0;
+  selectedId = null;
+  editingVerifiedBoxId = null;
+  cedulaInput.value = "";
+  inlineError.textContent = "";
+  detailPanel.innerHTML = '<div class="detail-placeholder"><span class="detail-icon">⌕</span><strong>Selecciona una cédula</strong><p>Aquí verás el puerto asignado y los accesos a los detalles del usuario.</p></div>';
+  try { localStorage.removeItem(BOX_DRAFT_KEY); } catch { /* Ignore unavailable local storage. */ }
+  renderList();
+  updateStatus();
+  copyStatus.textContent = "Los datos de la caja se limpiaron. Puedes registrar la siguiente.";
 }
 
 function cleanCell(value) {
@@ -357,15 +443,8 @@ boxForm.addEventListener("input", () => {
 });
 
 document.querySelector("#clearUsers").addEventListener("click", () => {
-  boxForm.reset();
-  const resetToday = new Date();
-  dateField.value = new Date(resetToday.getTime() - resetToday.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  users.length = 0;
-  selectedId = null;
-  detailPanel.innerHTML = '<div class="detail-placeholder"><span class="detail-icon">⌕</span><strong>Selecciona una cédula</strong><p>Aquí verás el puerto asignado y los accesos a los detalles del usuario.</p></div>';
-  inlineError.textContent = "";
-  try { localStorage.removeItem(BOX_DRAFT_KEY); } catch { /* Ignore unavailable local storage. */ }
-  renderList();
+  editingVerifiedBoxId = null;
+  resetBoxForm();
 });
 
 function sheetPortRows() {
@@ -482,7 +561,7 @@ window.addEventListener("message", event => {
   if (event.data?.type === "INTERCOL_AUTH_STATE") {
     const previousUid = advisorAuth.user?.uid || null;
     const previouslyReady = Boolean(advisorAuth.user && advisorAuth.profile);
-    advisorAuth = { user: event.data.user || null, profile: event.data.profile || null };
+    advisorAuth = { user: event.data.user || null, profile: event.data.profile || null, isAdmin: Boolean(event.data.isAdmin) };
     if (previousUid !== advisorAuth.user?.uid || previouslyReady !== Boolean(advisorAuth.user && advisorAuth.profile)) syncVerifiedBoxes();
     else renderVerifiedBoxes();
   }

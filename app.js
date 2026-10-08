@@ -12,6 +12,7 @@ const state = {
   supportConfigError: "",
   currentUser: null,
   advisorProfile: null,
+  workspaceRole: "",
   sectionPermissions: null,
   systemAdmin: false,
   pendingSectionId: null,
@@ -116,6 +117,16 @@ function renderSidebar() {
     personalList.prepend(item);
   });
   const account = $("#accountArea");
+  const workspaceRole = $("#workspaceRole");
+  if (workspaceRole) workspaceRole.textContent = state.currentUser ? (state.workspaceRole || "Asesor") : "INTERCOL";
+  if (workspaceRole) {
+    const isAdministratorRole = state.systemAdmin || String(state.advisorProfile?.rol || "").toLowerCase() === "administrador";
+    workspaceRole.classList.toggle("is-admin", isAdministratorRole);
+    workspaceRole.setAttribute("aria-disabled", String(!isAdministratorRole));
+    workspaceRole.tabIndex = isAdministratorRole ? 0 : -1;
+    if (isAdministratorRole) workspaceRole.href = "admin/";
+    else workspaceRole.removeAttribute("href");
+  }
   if (account) {
     account.replaceChildren();
     const button = document.createElement("button");
@@ -635,14 +646,21 @@ async function handleAdvisorAuth(user) {
   state.currentUser = user || null;
   state.advisorProfile = null;
   state.sectionPermissions = null;
+  state.workspaceRole = "";
   state.systemAdmin = isSystemAdminAccount(user);
   if (user) {
     try { state.advisorProfile = await firebase.getAdvisorProfile(user.uid); }
     catch (error) { console.error("No se pudo cargar el perfil del asesor:", error); }
-    if (!state.systemAdmin) {
+    if (state.systemAdmin) {
+      state.workspaceRole = "Administrador";
+    } else {
       try {
-        const rolePermissions = await firebase.getAdvisorRolePermissions(state.advisorProfile?.rol || "asesor");
-        state.sectionPermissions = rolePermissions?.permisos || {};
+        const role = await firebase.getAdvisorRolePermissions(state.advisorProfile?.rol || "asesor");
+        state.sectionPermissions = role?.permisos || {};
+        state.workspaceRole = role?.nombre || state.advisorProfile?.rol || "Asesor";
+        state.systemAdmin = String(state.advisorProfile?.rol || "").toLowerCase() === "administrador"
+          || String(role?.nombre || "").trim().toLowerCase() === "administrador";
+        if (state.systemAdmin) state.workspaceRole = "Administrador";
       } catch (error) { console.error("No se pudieron cargar los permisos del rol del asesor:", error); state.sectionPermissions = {}; }
     }
   }

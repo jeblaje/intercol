@@ -2,8 +2,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function roleIsAdministrator(roleId) {
+      let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
+      return roleId is string
+        && (roleId == 'administrador'
+          || (exists(rolePath) && get(rolePath).data.get('nombre', '') == 'Administrador'));
+    }
+    function hasAdministratorRole() {
+      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
+      return signedIn() && exists(advisorPath)
+        && roleIsAdministrator(get(advisorPath).data.get('rol', ''));
+    }
     function isSystemAdmin() {
-      return signedIn() && (request.auth.uid == 'INJQ1NtkRwRbxfLN2XCwF22flyu2' || request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com');
+      return signedIn() && (
+        request.auth.uid == 'INJQ1NtkRwRbxfLN2XCwF22flyu2'
+        || request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com'
+        || hasAdministratorRole()
+      );
     }
     function sectionUsesRoles(sectionId) {
       return !(sectionId in ['mensajes-temporales', 'utilidades', 'cajas-verificadas', 'reporte-servicio']);

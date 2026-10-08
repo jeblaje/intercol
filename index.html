@@ -6,7 +6,7 @@
   <meta name="description" content="INTERCOL - Dashboard central para cargar secciones independientes.">
   <title>INTERCOL Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261008-admin-role-link">
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -51,7 +51,7 @@
       <div class="sidebar-footer">
         <div class="profile">
           <div class="avatar">IC</div>
-          <div class="profile-copy"><strong>Mi espacio</strong><span>INTERCOL</span></div>
+          <div class="profile-copy"><strong>Mi espacio</strong><a id="workspaceRole" class="workspace-role-link" href="admin/">INTERCOL</a></div>
         </div>
         <button class="icon-button" id="themeToggle" title="Cambiar tema" aria-label="Cambiar tema">☾</button>
       </div>
@@ -78,7 +78,7 @@
   </div>
 
   <script src="secciones/registry.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261008-admin-role-link"></script>
   <script type="module" src="admin/firebase-config.js"></script>
 </body>
 </html>
