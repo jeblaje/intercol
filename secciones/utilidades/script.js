@@ -1,6 +1,7 @@
 const CEDULA_DRAFT_KEY = "intercol_utilidad_cedula_v1";
 const PRICE_DRAFT_KEY = "intercol_utilidad_precio_v1";
 const RECORD_DRAFT_KEY = "intercol_utilidad_registro_gestion_v1";
+const DEBTOR_DRAFT_KEY = "intercol_enviar_moroso_draft_v1";
 const cedulaInput = document.querySelector("#cedulaInput");
 const cedulaOutput = document.querySelector("#cedulaOutput");
 const cedulaCount = document.querySelector("#cedulaCount");
@@ -292,5 +293,32 @@ window.addEventListener("message", event => {
 window.parent.postMessage({ type: "INTERCOL_SECTION_READY" }, "*");
 const resizeSection = () => window.parent.postMessage({ type: "INTERCOL_SECTION_RESIZE", height: document.documentElement.scrollHeight }, "*");
 new ResizeObserver(resizeSection).observe(document.documentElement);
+const debtorForm = document.querySelector("#debtorForm");
+const debtorOutput = document.querySelector("#debtorOutput");
+const debtorFields = [["name", "Nombre"], ["cedula", "Cédula"], ["phones", "Teléfono"], ["address", "Dirección"], ["neighborhood", "Barrio"], ["note", "Anotación"]];
+function renderDebtorOutput() {
+  const data = new FormData(debtorForm);
+  debtorOutput.value = debtorFields.map(([name, label]) => {
+    const value = data.get(name)?.toString().trim();
+    return value ? `${label}: ${value}` : "";
+  }).filter(Boolean).join("\n");
+  try { localStorage.setItem(DEBTOR_DRAFT_KEY, JSON.stringify(Object.fromEntries(data.entries()))); } catch { /* Storage can be unavailable in private browsing. */ }
+  resizeSection();
+}
+try {
+  const savedDebtor = JSON.parse(localStorage.getItem(DEBTOR_DRAFT_KEY) || "null");
+  if (savedDebtor) Object.entries(savedDebtor).forEach(([name, value]) => { if (debtorForm.elements[name]) debtorForm.elements[name].value = value; });
+} catch { /* Ignore invalid saved data and start with an empty form. */ }
+debtorForm.addEventListener("input", renderDebtorOutput);
+document.querySelector("#copyDebtor").addEventListener("click", () => copyValue(debtorOutput, document.querySelector("#copyStatus")));
+document.querySelector("#clearDebtor").addEventListener("click", () => {
+  debtorForm.reset();
+  debtorOutput.value = "";
+  try { localStorage.removeItem(DEBTOR_DRAFT_KEY); } catch { /* Ignore unavailable storage. */ }
+  document.querySelector("#formStatus").textContent = "Formulario limpiado.";
+  document.querySelector("#copyStatus").textContent = "";
+  resizeSection();
+});
 renderRecord();
+renderDebtorOutput();
 window.addEventListener("load", resizeSection);

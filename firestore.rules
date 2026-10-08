@@ -6,7 +6,7 @@ service cloud.firestore {
       return signedIn() && request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com';
     }
     function sectionUsesRoles(sectionId) {
-      return !(sectionId in ['mensajes-temporales', 'utilidades', 'enviar-moroso', 'cajas-verificadas', 'reporte-servicio']);
+      return !(sectionId in ['mensajes-temporales', 'utilidades', 'cajas-verificadas', 'reporte-servicio']);
     }
     function advisorRoleAllows(roleId, sectionId, action) {
       let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
@@ -104,6 +104,18 @@ service cloud.firestore {
       allow update: if signedIn() && hasSectionPermission('notificaciones-pago', 'editar')
         && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid)
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid);
+    }
+    match /retirados/{recordId} {
+      allow read: if isSystemAdmin() || (signedIn() && resource.data.asesorUid == request.auth.uid && hasSectionPermission('retirados', 'ver'));
+      allow create: if signedIn() && (isSystemAdmin() || (hasSectionPermission('retirados', 'crear') && request.resource.data.asesorUid == request.auth.uid));
+      allow update: if signedIn() && (isSystemAdmin() || (resource.data.asesorUid == request.auth.uid && hasSectionPermission('retirados', 'editar') && request.resource.data.asesorUid == request.auth.uid));
+      allow delete: if signedIn() && (isSystemAdmin() || (resource.data.asesorUid == request.auth.uid && hasSectionPermission('retirados', 'eliminar')));
+    }
+    match /retirosTv/{recordId} {
+      allow read: if isSystemAdmin() || (signedIn() && resource.data.asesorCreadorUid == request.auth.uid && hasSectionPermission('retiros-tv', 'ver'));
+      allow create: if signedIn() && (isSystemAdmin() || (hasSectionPermission('retiros-tv', 'crear') && request.resource.data.asesorCreadorUid == request.auth.uid));
+      allow update: if signedIn() && (isSystemAdmin() || (resource.data.asesorCreadorUid == request.auth.uid && hasSectionPermission('retiros-tv', 'editar') && request.resource.data.asesorCreadorUid == request.auth.uid));
+      allow delete: if signedIn() && (isSystemAdmin() || (resource.data.asesorCreadorUid == request.auth.uid && hasSectionPermission('retiros-tv', 'eliminar')));
     }
     match /{document=**} { allow read, write: if false; }
   }

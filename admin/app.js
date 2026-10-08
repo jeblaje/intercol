@@ -7,9 +7,15 @@ function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char
 function listSections() { return (window.INTERCOL_SECTIONS || []).filter(section => !section.hideFromLists && section.id !== "acceso"); }
 function listPermissionSections() { return [...listSections().filter(section => section.requiresAuth), { id: "roles-permisos", name: "Roles y permisos", description: "Administrar roles y sus permisos." }]; }
 function canManageRoles(action) { return state.isSystemAdmin || state.roleAdminPermissions[action] === true; }
+function canAccessAdminView(view) {
+  if (view === "dashboard") return true;
+  if (state.isSystemAdmin) return true;
+  return state.roleAdminPermissions.ver === true;
+}
 function currentView() { const key = location.hash.slice(1); return views[key] ? key : "dashboard"; }
 function setStatus(text, error = false) { const status = $("#adminStatus"); status.classList.toggle("is-error", error); status.innerHTML = `<span class="status-dot"></span>${escapeHtml(text)}`; }
 function renderLogin() {
+  document.body.classList.add("admin-auth-only");
   $("#adminSignOut").hidden = true;
   host.innerHTML = `<section class="login-card"><span class="eyebrow">ACCESO ADMINISTRATIVO</span><h2>Iniciar sesión</h2><p>Usa tu cuenta de asesor. Solo la cuenta autorizada puede administrar INTERCOL.</p><form id="adminLoginForm"><label for="adminUsername">Nombre de usuario</label><input id="adminUsername" name="username" autocomplete="username" required><label for="adminPassword">Contraseña</label><input id="adminPassword" name="password" type="password" autocomplete="current-password" required><button class="primary-button" type="submit">Continuar</button><p class="inline-status" id="loginStatus" role="status"></p></form></section>`;
   $("#adminLoginForm").addEventListener("submit", async event => {
@@ -20,13 +26,26 @@ function renderLogin() {
   });
 }
 function renderUnauthorized() {
-  $("#adminSignOut").hidden = false;
-  host.innerHTML = `<section class="empty-panel access-denied"><div class="empty-icon">⛨</div><span class="eyebrow">ACCESO RESTRINGIDO</span><h2>Esta cuenta no administra el sistema</h2><p>UID de esta cuenta:</p><code class="uid-copy">${escapeHtml(state.user?.uid || "")}</code><button class="secondary-button" id="copyUid" type="button">Copiar UID</button><p class="inline-status" id="copyStatus" role="status"></p></section>`;
-  $("#copyUid").addEventListener("click", async () => { try { await navigator.clipboard.writeText(state.user.uid); $("#copyStatus").textContent = "UID copiado."; } catch { $("#copyStatus").textContent = state.user.uid; } });
+  document.body.classList.add("admin-auth-only");
+  $("#adminSignOut").hidden = true;
+  host.innerHTML = `<section class="login-card access-denied"><span class="eyebrow">ACCESO RESTRINGIDO</span><h2>No tienes permisos</h2><p>Esta cuenta no está autorizada para entrar al panel administrativo.</p><a class="primary-button access-return" href="../index.html">Volver al servicio principal</a></section>`;
 }
-function updateNav() { document.querySelectorAll("[data-view]").forEach(button => { button.classList.toggle("active", button.dataset.view === state.view); if (button.dataset.view === "advisors") button.hidden = !state.isSystemAdmin; }); $("#adminPageTitle").textContent = views[state.view]; }
+function updateNav() {
+  document.querySelectorAll("[data-view]").forEach(button => {
+    button.classList.toggle("active", button.dataset.view === state.view);
+    button.hidden = !canAccessAdminView(button.dataset.view);
+  });
+  const managementLabel = document.querySelector(".management-label");
+  if (managementLabel) managementLabel.hidden = !["advisors", "sections", "permissions"].some(canAccessAdminView);
+  $("#adminPageTitle").textContent = views[state.view];
+}
 function dashboardView() {
-  host.innerHTML = `<section class="welcome-card"><div class="welcome-mark">I</div><div><span class="eyebrow">ESPACIO DE ADMINISTRACIÓN</span><h2>Bienvenido al panel de INTERCOL</h2><p>Administra las cuentas, las secciones y los roles de acceso.</p></div></section><section class="metrics-grid" aria-label="Resumen de administración"><article class="metric-card"><span class="metric-icon purple">♙</span><div><span>Asesores</span><strong>${state.advisors.length}</strong></div><small>Perfiles cargados desde Firebase</small></article><article class="metric-card"><span class="metric-icon blue">▣</span><div><span>Secciones</span><strong>${listSections().length}</strong></div><small>Módulos registrados en INTERCOL</small></article><article class="metric-card"><span class="metric-icon amber">⚿</span><div><span>Roles</span><strong>${state.roles.length}</strong></div><small>Permisos compartidos por rol</small></article></section><section class="quick-grid"><button class="quick-card" type="button" data-go="advisors"><span class="quick-icon purple">♙</span><strong>Administrar asesores</strong><small>Asignar un rol a cada asesor</small><span class="quick-arrow">→</span></button><button class="quick-card" type="button" data-go="sections"><span class="quick-icon blue">▣</span><strong>Consultar secciones</strong><small>Ver los módulos disponibles</small><span class="quick-arrow">→</span></button><button class="quick-card" type="button" data-go="permissions"><span class="quick-icon amber">⚿</span><strong>Administrar roles</strong><small>Definir permisos por rol</small><span class="quick-arrow">→</span></button></section>`;
+  const managementCards = [
+    canAccessAdminView("advisors") ? '<button class="quick-card" type="button" data-go="advisors"><span class="quick-icon purple">♙</span><strong>Administrar asesores</strong><small>Asignar un rol a cada asesor</small><span class="quick-arrow">→</span></button>' : "",
+    canAccessAdminView("sections") ? '<button class="quick-card" type="button" data-go="sections"><span class="quick-icon blue">▣</span><strong>Consultar secciones</strong><small>Ver los módulos disponibles</small><span class="quick-arrow">→</span></button>' : "",
+    canAccessAdminView("permissions") ? '<button class="quick-card" type="button" data-go="permissions"><span class="quick-icon amber">⚿</span><strong>Administrar roles</strong><small>Definir permisos por rol</small><span class="quick-arrow">→</span></button>' : ""
+  ].join("");
+  host.innerHTML = `<section class="welcome-card"><div class="welcome-mark">I</div><div><span class="eyebrow">ESPACIO DE ADMINISTRACIÓN</span><h2>Bienvenido al panel de INTERCOL</h2><p>Administra las cuentas, las secciones y los roles de acceso.</p></div></section><section class="metrics-grid" aria-label="Resumen de administración"><article class="metric-card"><span class="metric-icon purple">♙</span><div><span>Asesores</span><strong>${state.advisors.length}</strong></div><small>Perfiles cargados desde Firebase</small></article><article class="metric-card"><span class="metric-icon blue">▣</span><div><span>Secciones</span><strong>${listSections().length}</strong></div><small>Módulos registrados en INTERCOL</small></article><article class="metric-card"><span class="metric-icon amber">⚿</span><div><span>Roles</span><strong>${state.roles.length}</strong></div><small>Permisos compartidos por rol</small></article></section><section class="quick-grid">${managementCards}</section>`;
   host.querySelectorAll("[data-go]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.go)));
 }
 function advisorsView() {
@@ -93,8 +112,8 @@ function rolesView() {
     $("#cancelRoleEdit").addEventListener("click", () => { state.roleDraft = false; state.roleEditorOpen = false; rolesView(); });
   }
 }
-function render() { if (state.view === "advisors" && !state.isSystemAdmin) state.view = "dashboard"; if (state.view === "permissions" && !canManageRoles("ver")) state.view = "dashboard"; updateNav(); if (state.view === "dashboard") dashboardView(); else if (state.view === "advisors") advisorsView(); else if (state.view === "sections") sectionsView(); else rolesView(); }
-function navigate(view) { if (!views[view]) return; if (view === "advisors" && !state.isSystemAdmin) return; if (view === "permissions" && !canManageRoles("ver")) return; if (location.hash !== `#${view}`) location.hash = view; else { state.view = view; render(); } }
+function render() { document.body.classList.remove("admin-auth-only"); if (!canAccessAdminView(state.view)) state.view = "dashboard"; updateNav(); if (state.view === "dashboard") dashboardView(); else if (state.view === "advisors") advisorsView(); else if (state.view === "sections") sectionsView(); else rolesView(); }
+function navigate(view) { if (!views[view] || !canAccessAdminView(view)) return; if (location.hash !== `#${view}`) location.hash = view; else { state.view = view; render(); } }
 async function loadData() {
   setStatus("Cargando datos…");
   let loadStep = "leer el catálogo de roles";
@@ -215,6 +234,7 @@ async function handleUser(user) {
   if (!user) { setStatus("Inicia sesión para continuar"); renderLogin(); return; }
   $("#adminSignOut").hidden = false;
   state.isSystemAdmin = String(user.email || "").toLowerCase() === ADMIN_EMAIL;
+  if (!state.isSystemAdmin) { setStatus("Cuenta sin permisos para administrar el sistema", true); renderUnauthorized(); return; }
   try { state.profile = await state.firebase.getAdvisorProfile(user.uid); } catch { state.profile = null; }
   if (!state.isSystemAdmin && state.profile) {
     try {
@@ -223,7 +243,6 @@ async function handleUser(user) {
       state.roleAdminPermissions = role?.permisos?.["roles-permisos"] || {};
     } catch (error) { console.error("No se pudieron cargar permisos de administración de roles:", error); }
   }
-  if (!state.isSystemAdmin && !state.roleAdminPermissions.ver) { setStatus("Cuenta sin permisos para administrar roles", true); renderUnauthorized(); return; }
   state.view = currentView(); await loadData();
 }
 function boot() {

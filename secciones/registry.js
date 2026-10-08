@@ -37,19 +37,30 @@ window.INTERCOL_SECTIONS = [
     path: "secciones/utilidades/index.html"
   },
   {
-    id: "enviar-moroso",
-    name: "Enviar moroso",
-    description: "Organiza los datos del moroso en un texto para copiar y enviar.",
-    icon: "↗",
-    path: "secciones/enviar-moroso/index.html"
-  },
-  {
     id: "verificar-caja",
     name: "Verificar Caja",
     description: "Herramienta para verificar y cuadrar la caja.",
     icon: "✓",
     path: "secciones/verificar-caja/index.html",
     requiresAuth: true
+  },
+  {
+    id: "retirados",
+    name: "Retirados",
+    description: "Agenda y controla los retiros de servicio.",
+    icon: "↘",
+    path: "secciones/retirados/index.html",
+    requiresAuth: true,
+    sidebarGroup: "personal"
+  },
+  {
+    id: "retiros-tv",
+    name: "Retiro de TV",
+    description: "Gestiona retiros de equipos de televisión y sus tickets.",
+    icon: "▣",
+    path: "secciones/retiros-tv/index.html",
+    requiresAuth: true,
+    sidebarGroup: "personal"
   },
   {
     id: "cajas-verificadas",

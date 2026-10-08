@@ -8,6 +8,8 @@ export const firestore = getFirestore(firebaseApp);
 export const auth = getAuth(firebaseApp);
 const temporaryMessages = collection(firestore, "smsTemp");
 const paymentNotifications = collection(firestore, "notificacionesPago");
+const retiredRecords = collection(firestore, "retirados");
+const tvRetirementRecords = collection(firestore, "retirosTv");
 const verifiedBoxes = collection(firestore, "cajasVerificadas");
 const publicSupportConfig = doc(firestore, "configuracionPublica", "equipos");
 function usernameEmail(username) {
@@ -51,6 +53,14 @@ export function assignAdvisorRole(uid, roleId, updatedBy) { return updateDoc(doc
 export function observeAuth(callback) { return onAuthStateChanged(auth, callback); }
 export function subscribePaymentNotifications(uid, onChange, onError) { return onSnapshot(query(paymentNotifications, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 export function createPaymentNotification({ customerName, customerId, notificationDate, advisorUid, advisorName, paymentDay = null }) { return addDoc(paymentNotifications, { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, ...(paymentDay ? { diaPago: paymentDay } : {}), asesorUid: advisorUid, asesor: advisorName, revisado: false, revisadoEn: null, revisadoPor: null, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
+export function subscribeRetiredRecords(uid, onChange, onError) { return onSnapshot(query(retiredRecords, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+export function createRetiredRecord(data) { return addDoc(retiredRecords, { ...data, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
+export function updateRetiredRecord(id, data) { return updateDoc(doc(firestore, "retirados", id), { ...data, actualizadoEn: serverTimestamp() }); }
+export function deleteRetiredRecord(id) { return deleteDoc(doc(firestore, "retirados", id)); }
+export function subscribeTvRetirementRecords(uid, onChange, onError) { return onSnapshot(query(tvRetirementRecords, where("asesorCreadorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+export function createTvRetirementRecord(data) { return addDoc(tvRetirementRecords, { ...data, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
+export function updateTvRetirementRecord(id, data) { return updateDoc(doc(firestore, "retirosTv", id), { ...data, actualizadoEn: serverTimestamp() }); }
+export function deleteTvRetirementRecord(id) { return deleteDoc(doc(firestore, "retirosTv", id)); }
 export function updatePaymentNotification(id, { customerName, customerId, notificationDate }) { return updateDoc(doc(firestore, "notificacionesPago", id), { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, actualizadoEn: serverTimestamp() }); }
 export function setPaymentNotificationReviewed(id, reviewed, advisorName) { return updateDoc(doc(firestore, "notificacionesPago", id), { revisado: reviewed, revisadoEn: reviewed ? Timestamp.now() : null, revisadoPor: reviewed ? advisorName : null, actualizadoEn: serverTimestamp() }); }
 export function deletePaymentNotification(id) { return deleteDoc(doc(firestore, "notificacionesPago", id)); }
@@ -107,6 +117,6 @@ export function savePublicSupportConfig(value) {
     actualizadoEn: serverTimestamp()
   });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, createVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

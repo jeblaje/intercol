@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Retirados · INTERCOL</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <main class="retired-app">
+    <header class="retired-heading"><div><span class="kicker">PERSONAL · SERVICIOS</span><h1>Retirados</h1><p>Agenda retiros y consulta rápidamente el estado de cada servicio.</p></div><div class="live-pill"><span></span><span id="syncStatus">Conectando</span></div></header>
+    <section class="retired-layout">
+      <section class="retired-form-card">
+        <div class="card-kicker">NUEVO RETIRO</div><h2 id="formTitle">Agendar retiro</h2><p class="form-intro">Registra los datos mínimos y actualiza el estado cuando avance la gestión.</p>
+        <form id="retiredForm"><input type="hidden" name="recordId">
+          <label>Nombre<input name="nombre" placeholder="Nombre completo" required></label>
+          <label>Cédula<input name="cedula" placeholder="Número de cédula" required></label>
+          <label>Fecha agendada<input name="fechaAgendado" type="date" required></label>
+          <label>Dirección<input name="direccion" placeholder="Dirección"></label>
+          <label>Barrio<input name="barrio" placeholder="Barrio"></label>
+          <label>RB<input name="rb" placeholder="Ej. AMANECERES"></label>
+          <label>Estado<select name="estado"><option value="pendiente">Pendiente</option><option value="realizado">Realizado</option><option value="cancelado">Cancelado</option></select></label>
+          <label>Descripción<textarea name="descripcion" rows="3" placeholder="Detalles del retiro"></textarea></label>
+          <div class="form-actions"><button type="button" class="button secondary" id="cancelEdit" hidden>Cancelar</button><button class="button primary" type="submit" id="saveButton">Guardar retiro</button></div><p id="formStatus" class="status" role="status"></p>
+        </form>
+      </section>
+      <section class="retired-list-card">
+        <header class="list-heading"><div><div class="card-kicker">SEGUIMIENTO</div><h2>Retiros agendados <span id="recordCount">0</span></h2></div><button type="button" class="filter-button" id="clearSearch">Limpiar</button></header>
+        <div class="search-row"><input id="searchInput" type="search" placeholder="Busca por nombre, cédula, barrio, RB o estado"><select id="statusFilter"><option value="">Todos los estados</option><option value="pendiente">Pendientes</option><option value="realizado">Realizados</option><option value="cancelado">Cancelados</option></select></div>
+        <div id="recordList" class="record-list"></div><div id="emptyState" class="empty-state">Aún no hay retiros registrados.</div>
+      </section>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body></html>

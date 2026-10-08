@@ -9,7 +9,7 @@
 <body>
   <main class="utilities-app">
     <header class="utilities-heading">
-      <div><span class="kicker">HERRAMIENTAS INTERNAS</span><h1>Utilidades</h1><p>Espacios para las herramientas que agregaremos.</p></div>
+      <div><span class="kicker">HERRAMIENTAS INTERNAS</span><h1>Utilidades</h1><p>Herramientas para preparar y organizar la información de clientes.</p></div>
     </header>
     <section class="utilities-grid" aria-label="Tarjetas de utilidades">
       <article class="utility-card utility-tool" aria-labelledby="cedulaTitle">
@@ -67,7 +67,19 @@
         <div class="record-output"><label class="field-label" for="recordOutput">Texto listo para copiar</label><div class="result-row"><textarea id="recordOutput" rows="4" readonly></textarea><button type="button" class="copy-button" id="copyRecord">Copiar</button></div></div>
         <div class="tool-actions"><button type="button" class="clear-button" id="clearRecord">Limpiar</button><span id="recordStatus" class="tool-status" role="status" aria-live="polite"></span></div>
       </article>
-      <article class="utility-card" aria-label="Espacio de utilidad 4"></article>
+      <article class="utility-card debtor-tool" aria-labelledby="debtorTitle">
+        <header class="tool-heading"><div><span class="tool-number">04</span><h2 id="debtorTitle">Datos moroso</h2><p>Completa los campos que necesites y copia el resultado para enviar.</p></div></header>
+        <form id="debtorForm" autocomplete="off">
+          <label>Nombre<input name="name" placeholder="Nombre completo"></label>
+          <label>Cédula<input name="cedula" inputmode="numeric" placeholder="Número de cédula"></label>
+          <label>Teléfono(s)<input name="phones" placeholder="Separa varios teléfonos con coma"></label>
+          <label>Dirección<input name="address" placeholder="Dirección"></label>
+          <label>Barrio<input name="neighborhood" placeholder="Barrio"></label>
+          <label class="full-width">Anotación<textarea name="note" rows="4" placeholder="Notas adicionales o comentarios"></textarea></label>
+          <div class="form-actions"><button type="button" class="clear-button" id="clearDebtor">Limpiar todo</button><span id="formStatus" class="tool-status" role="status" aria-live="polite"></span></div>
+        </form>
+        <section class="debtor-output" aria-labelledby="debtorOutputTitle"><label class="field-label" id="debtorOutputTitle" for="debtorOutput">Texto listo para enviar</label><div class="result-row"><textarea id="debtorOutput" rows="5" readonly aria-label="Texto listo para enviar"></textarea><button type="button" class="copy-button" id="copyDebtor">Copiar</button></div><span id="copyStatus" class="tool-status" role="status" aria-live="polite"></span></section>
+      </article>
     </section>
   </main>
   <script src="script.js"></script>

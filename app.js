@@ -80,14 +80,20 @@ function canViewSection(sectionId) {
 function renderSidebar() {
   const publicList = $("#sectionList");
   const protectedList = $("#protectedSectionList");
+  const personalList = $("#personalNavList");
   const empty = $("#emptySections");
   publicList.replaceChildren();
   protectedList.replaceChildren();
+  personalList.querySelectorAll(".section-nav-item[data-section-id]").forEach(item => item.remove());
   const visibleSections = state.sections.filter(section => !section.hideFromLists && section.id !== "acceso" && canViewSection(section.id));
   const publicSections = visibleSections.filter(section => !section.requiresAuth);
-  const protectedSections = visibleSections.filter(section => section.requiresAuth);
+  const protectedSections = visibleSections.filter(section => section.requiresAuth && section.sidebarGroup !== "personal");
+  const personalSections = visibleSections.filter(section => section.requiresAuth && section.sidebarGroup === "personal");
   const protectedHeading = protectedList.closest(".protected-section-group")?.querySelector(".section-heading");
-  if (protectedHeading) protectedHeading.hidden = protectedSections.length === 0;
+  const personalGroup = $("#personalNavGroup");
+  const showPersonalGroup = Boolean(state.currentUser && state.advisorProfile && personalSections.length);
+  if (personalGroup) personalGroup.hidden = !showPersonalGroup;
+  if (protectedHeading) protectedHeading.hidden = protectedSections.length === 0 && !showPersonalGroup;
   empty.classList.toggle("hidden", publicSections.length > 0);
   const appendSection = (section, list, index) => {
     const item = document.createElement("button");
@@ -100,6 +106,15 @@ function renderSidebar() {
   };
   publicSections.forEach((section, index) => appendSection(section, publicList, index));
   protectedSections.forEach((section, index) => appendSection(section, protectedList, index));
+  personalSections.forEach((section, index) => {
+    const item = document.createElement("button");
+    const active = state.activeView === "section" && state.activeSectionId === section.id;
+    item.type = "button"; item.dataset.sectionId = section.id;
+    item.className = `nav-item section-nav-item personal-link ${active ? "active" : ""}`;
+    item.innerHTML = `<span class="nav-icon">${escapeHtml(section.icon || String(index + 1))}</span><span>${escapeHtml(section.name)}</span>`;
+    item.addEventListener("click", () => openSection(section.id));
+    personalList.prepend(item);
+  });
   const account = $("#accountArea");
   if (account) {
     account.replaceChildren();
@@ -118,6 +133,25 @@ function renderSidebar() {
     }
     account.appendChild(button);
   }
+}
+
+function syncSidebarMenu() {
+  const sidebar = $("#sidebar");
+  const open = window.innerWidth <= 980 && sidebar.classList.contains("open");
+  const toggle = $("#menuToggle");
+  toggle.textContent = open ? "×" : "☰";
+  toggle.setAttribute("aria-label", open ? "Cerrar menú" : "Abrir menú");
+  toggle.setAttribute("aria-expanded", String(open));
+  $("#sidebarBackdrop").classList.toggle("is-visible", open);
+}
+function closeSidebar() {
+  $("#sidebar").classList.remove("open");
+  syncSidebarMenu();
+}
+function toggleSidebar() {
+  if (window.innerWidth > 980) return;
+  $("#sidebar").classList.toggle("open");
+  syncSidebarMenu();
 }
 
 function setView(view) {
@@ -140,6 +174,7 @@ function setView(view) {
   }
   renderSidebar();
   saveCurrentView();
+  if (window.innerWidth <= 980) closeSidebar();
 }
 
 function renderDashboard() {
@@ -376,7 +411,7 @@ function openSection(id) {
   });
   window.scrollTo(0, 0);
   renderSidebar();
-  if (window.innerWidth <= 980) $("#sidebar").classList.remove("open");
+  if (window.innerWidth <= 980) closeSidebar();
 }
 
 function toggleTheme() {
@@ -652,7 +687,17 @@ startSupportConfigSync();
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 $("#themeToggle").addEventListener("click", toggleTheme);
 $("#themePill").addEventListener("click", toggleTheme);
-$("#menuToggle").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+$("#menuToggle").addEventListener("click", toggleSidebar);
+$("#sidebarBackdrop").addEventListener("click", closeSidebar);
+$("#personalNavToggle").addEventListener("click", () => {
+  const list = $("#personalNavList");
+  const expanded = $("#personalNavToggle").getAttribute("aria-expanded") === "true";
+  $("#personalNavToggle").setAttribute("aria-expanded", String(!expanded));
+  list.hidden = expanded;
+});
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeSidebar(); });
+window.addEventListener("resize", () => { if (window.innerWidth > 980) closeSidebar(); else syncSidebarMenu(); });
+syncSidebarMenu();
 
 applyTheme();
 setInterval(() => { if (state.activeView === "dashboard") renderDashboardMessages(); }, 15000);

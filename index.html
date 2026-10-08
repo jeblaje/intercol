@@ -37,8 +37,14 @@
       </div>
 
       <div class="sidebar-section protected-section-group">
-        <div class="section-heading"><span>SECCIONES CON INICIO DE SESIÓN</span></div>
+        <div class="section-heading"><span>SESIONES CON INICIO DE SESIÓN</span></div>
         <div class="session-list" id="protectedSectionList" aria-live="polite"></div>
+        <div class="personal-nav-group" id="personalNavGroup" hidden>
+          <button class="nav-item personal-nav-toggle" id="personalNavToggle" type="button" aria-expanded="false" aria-controls="personalNavList">
+            <span class="nav-icon">♙</span><span>Personal</span><span class="personal-nav-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div class="personal-nav-list" id="personalNavList" hidden></div>
+        </div>
         <div id="accountArea"></div>
       </div>
 
@@ -50,11 +56,12 @@
         <button class="icon-button" id="themeToggle" title="Cambiar tema" aria-label="Cambiar tema">☾</button>
       </div>
     </aside>
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Cerrar menú"></button>
 
     <main class="main-content">
       <header class="topbar">
         <div class="topbar-left">
-          <button class="icon-button menu-toggle" id="menuToggle" aria-label="Abrir menú">☰</button>
+          <button class="icon-button menu-toggle" id="menuToggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="sidebar">☰</button>
           <div>
             <span class="eyebrow" id="pageEyebrow">ESPACIO DE TRABAJO</span>
             <h1 id="pageTitle">Dashboard</h1>
