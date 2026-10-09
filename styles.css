@@ -106,6 +106,15 @@ h1 { margin: 4px 0 0; font-size: 22px; letter-spacing: -.02em; }
 
 .content { max-width: 1320px; margin: 0 auto; padding: 34px; }
 .dashboard-split { min-height: calc(100vh - 150px); display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr); gap: 20px; align-items: start; }
+.team-updated-at { display: inline-flex; align-items: center; gap: 6px; margin-top: 5px; color: var(--muted); font-size: 10px; }
+.team-updated-at::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; }
+.team-updated-at.is-fresh { color: #15803d; }
+.team-updated-at.is-aging { color: #b45309; }
+.team-updated-at.is-stale { color: #b91c1c; }
+.team-updated-at.is-unknown { color: var(--muted); }
+[data-theme="dark"] .team-updated-at.is-fresh { color: #4ade80; }
+[data-theme="dark"] .team-updated-at.is-aging { color: #fbbf24; }
+[data-theme="dark"] .team-updated-at.is-stale { color: #f87171; }
 .dashboard-blank { min-height: 420px; }
 .dashboard-teams { position: sticky; top: 105px; }
 .team-dashboard-body { display: grid; gap: 16px; padding: 16px; max-height: calc(100vh - 230px); overflow: auto; }

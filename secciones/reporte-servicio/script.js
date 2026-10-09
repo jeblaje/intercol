@@ -1,5 +1,6 @@
 const form = document.querySelector("#reportForm");
 const output = document.querySelector("#reportOutput");
+const outputTitle = document.querySelector("#outputTitle");
 const portChoices = document.querySelector("#portChoices");
 const copyStatus = document.querySelector("#copyStatus");
 const REPORT_DRAFT_KEY = "intercol_reporte_servicio_draft_v1";
@@ -100,9 +101,15 @@ function renderControls() {
 }
 
 function renderReport() {
+  const reportTitle = isHighPower()
+    ? "=== REPORTE DE SERVICIO: CAJA CON POTENCIA ALTA ==="
+    : "=== REPORTE DE SERVICIO: SPLITTER AUTORIZADO ===";
+  outputTitle.textContent = reportTitle.replaceAll("=", "").trim();
   if (isHighPower()) {
     const highExisting = Number(value("highSplittersExisting")) || 0;
     const highLines = [
+      reportTitle,
+      "",
       optionalLine("Cliente", value("highCustomerName")),
       optionalLine("Cédula", value("highCedula")),
       optionalLine("Dirección", value("highAddress")),
@@ -128,6 +135,8 @@ function renderReport() {
   const type = value("reportType");
   const existing = Number(value("splittersExisting")) || 0;
   const lines = [
+    reportTitle,
+    "",
     `${type === "Splitter autorizado" ? "Autorizó el splitter" : "Quién reporta la caja ponchada"}: ${value("reporter")}`,
     `N° de caja: ${value("boxNumber")}`,
     `Tipo de caja: ${value("boxType")}`,
@@ -157,6 +166,7 @@ function ordinal(number) {
 }
 
 document.querySelector("#copyReport").addEventListener("click", async () => {
+  renderReport();
   try {
     await navigator.clipboard.writeText(output.value);
     copyStatus.textContent = "Reporte copiado. Pégalo en el chat o formulario de destino.";

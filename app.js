@@ -192,7 +192,7 @@ function renderDashboard() {
   content.innerHTML = `
     <section class="dashboard-split" aria-label="Panel del dashboard">
       <section class="panel dashboard-teams">
-        <div class="panel-header"><div><h3>Equipos y contactos</h3><span>Configuración compartida</span></div><button class="secondary-button" id="editSupportConfig" type="button">Editar</button></div>
+        <div class="panel-header"><div><h3>Equipos y contactos</h3><span class="team-updated-at" id="supportConfigUpdatedAt" role="status" aria-live="polite">Actualización: consultando…</span></div><button class="secondary-button" id="editSupportConfig" type="button">Editar</button></div>
         <div class="team-dashboard-body" id="dashboardTeams" aria-live="polite"></div>
       </section>
       <section class="panel dashboard-messages">
@@ -201,10 +201,30 @@ function renderDashboard() {
       </section>
     </section>
   `;
+  renderSupportConfigUpdatedAt();
   $("#editSupportConfig").addEventListener("click", () => setView("settings"));
   $("#manageTemporaryMessages").addEventListener("click", () => openSection("mensajes-temporales"));
   renderDashboardTeams();
   renderDashboardMessages();
+}
+
+function renderSupportConfigUpdatedAt() {
+  const badge = $("#supportConfigUpdatedAt");
+  if (!badge) return;
+  const raw = state.supportConfig?.actualizadoEn;
+  const updatedAt = raw?.toDate instanceof Function ? raw.toDate() : raw instanceof Date ? raw : raw ? new Date(raw) : null;
+  badge.classList.remove("is-fresh", "is-aging", "is-stale", "is-unknown");
+  if (!updatedAt || Number.isNaN(updatedAt.getTime())) {
+    badge.classList.add("is-unknown");
+    badge.textContent = "Actualización: sin registro";
+    badge.title = "Esta configuración todavía no tiene una fecha de actualización guardada.";
+    return;
+  }
+  const ageHours = Math.max(0, Date.now() - updatedAt.getTime()) / 36e5;
+  const freshness = ageHours < 24 ? "is-fresh" : ageHours < 168 ? "is-aging" : "is-stale";
+  badge.classList.add(freshness);
+  badge.textContent = `Actualizado: ${new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Bogota" }).format(updatedAt)}`;
+  badge.title = ageHours < 24 ? "Los equipos y contactos se guardaron hace menos de 24 horas." : ageHours < 168 ? "Los equipos y contactos se guardaron hace menos de 7 días." : "Los equipos y contactos llevan más de 7 días sin cambios.";
 }
 
 const teamConfigFields = [
@@ -390,9 +410,10 @@ async function saveSupportConfig(event) {
   button.disabled = true; button.textContent = "Guardando…"; status.textContent = "Guardando cambios compartidos…";
   try {
     await firebase.savePublicSupportConfig(value);
-    state.supportConfig = value;
+    state.supportConfig = { ...value, actualizadoEn: new Date() };
     form.dataset.dirty = "false";
     status.textContent = "Configuración guardada. Ya aparece en el dashboard para todos.";
+    renderSupportConfigUpdatedAt();
   } catch (error) {
     console.error("No se pudo guardar la configuración de equipos:", error);
     status.textContent = error?.code === "permission-denied"
@@ -709,7 +730,7 @@ function normalizeSupportConfig(value) {
   const groups = value?.soporte || {};
   const sales = value?.ventas || {};
   const asList = items => Array.isArray(items) ? items.map(item => String(item ?? "").trim()).filter(Boolean) : [];
-  return { soporte: { arriba: asList(groups.arriba), abajo: asList(groups.abajo), sanJuan: asList(groups.sanJuan), riohacha: asList(groups.riohacha) }, ventas: { valledupar: asList(sales.valledupar), pueblos: asList(sales.pueblos) } };
+  return { soporte: { arriba: asList(groups.arriba), abajo: asList(groups.abajo), sanJuan: asList(groups.sanJuan), riohacha: asList(groups.riohacha) }, ventas: { valledupar: asList(sales.valledupar), pueblos: asList(sales.pueblos) }, actualizadoEn: value?.actualizadoEn || null };
 }
 function startSupportConfigSync() {
   const firebase = window.INTERCOL_FIREBASE;
@@ -719,6 +740,7 @@ function startSupportConfigSync() {
     state.supportConfigError = "";
     populateSupportConfigForm();
     renderDashboardTeams();
+    renderSupportConfigUpdatedAt();
   }, error => {
     console.error("No se pudo cargar la configuración pública de equipos:", error);
     state.supportConfigError = error?.code === "permission-denied"

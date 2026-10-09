@@ -9,6 +9,7 @@ let loaded = false;
 let stopSubscription = null;
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+const actionText = action => ({ cancelled: "SE TOMA PUERTO CANCELADO", splitter: "SE COLOCA SPLITTER", addressChange: "Cliente cambio de dirección", notRegistered: "Cliente no registra" }[action] || "ACTIVO");
 function displayDate(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : (value || "—");
@@ -50,8 +51,9 @@ function showDetail(box) {
   boxDetail.dataset.boxId = box.id;
   const link = safeUrl(box.link);
   const users = (Array.isArray(box.cedulas) ? box.cedulas : []).slice().sort((a, b) => Number(a.puertoTecnico) - Number(b.puertoTecnico)).map(user => {
-    const orange = Boolean(user.fondoNaranja);
-    return `<article class="port-card ${orange ? "orange-marked" : ""}"><div class="port-id"><strong>${esc(user.cedula)}</strong>${orange ? '<span class="orange-label">Fondo naranja Excel</span>' : ""}</div><div class="port-values"><span>Puerto (lista del técnico): <b>${esc(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPort(user.puertoReal || user.puertoTecnico, box.tipoCaja)}</b></span></div>${user.comentario ? `<p class="port-comment">${esc(user.comentario)}</p>` : ""}</article>`;
+    const action = user.accionPuerto || (user.fondoNaranja ? "cancelled" : "active");
+    const actionClass = action === "cancelled" ? "action-cancelled" : action === "splitter" ? "action-splitter" : action === "addressChange" ? "action-address-change" : action === "notRegistered" ? "action-not-registered" : "action-active";
+    return `<article class="port-card ${actionClass}"><div class="port-id"><strong>${esc(user.cedula)}</strong><span class="port-action-label">${esc(actionText(action))}</span></div><div class="port-values"><span>Puerto (lista del técnico): <b>${esc(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPort(user.puertoReal || user.puertoTecnico, box.tipoCaja)}</b></span></div>${user.comentario ? `<p class="port-comment">${esc(user.comentario)}</p>` : ""}</article>`;
   }).join("");
   boxDetail.innerHTML = `<div class="ficha"><div class="ficha-head"><div><span class="ficha-kicker">FICHA DE CAJA VERIFICADA</span><h2>${esc(box.numeroCaja || "Sin número")}</h2></div>${link ? `<a class="filter-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : '<span class="filter-link disabled">Sin link de filtro</span>'}</div><dl class="data"><div><dt>Fecha</dt><dd>${esc(displayDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${esc(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${esc(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${esc(box.tecnico || "—")}</dd></div><div><dt>Asesor de la caja</dt><dd>${esc(box.asesor || "—")}</dd></div></dl><h3>Puertos e identificaciones</h3><div class="ports">${users || '<p class="creator">No se guardaron puertos.</p>'}</div><p class="creator">Registrada por: ${esc(box.creadoPor || "—")} · Usuario registrado: ${esc(box.usuarioRegistrado || "—")}</p></div>`;
   renderList();

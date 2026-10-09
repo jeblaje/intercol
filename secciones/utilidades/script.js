@@ -115,6 +115,9 @@ document.querySelector("#clearPrice").addEventListener("click", () => {
 
 const recordType = document.querySelector("#recordType");
 const planFields = document.querySelector("#planFields");
+const planCustomerLookup = document.querySelector("#planCustomerLookup");
+const cancelledPaymentDayField = document.querySelector("#cancelledPaymentDayField");
+const planTechnicianLabel = document.querySelector("#planTechnicianLabel");
 const reconnectionFields = document.querySelector("#reconnectionFields");
 const creditFields = document.querySelector("#creditFields");
 const holderFields = document.querySelector("#holderFields");
@@ -123,7 +126,7 @@ const recordDate = document.querySelector("#recordDate");
 const recordOutput = document.querySelector("#recordOutput");
 const recordStatus = document.querySelector("#recordStatus");
 const recordControls = [
-  "recordType", "planName", "planPrice", "planCustomerId", "planTechnician", "planAdvisor", "paysMonth",
+  "recordType", "planName", "planPrice", "planCustomerId", "planTechnician", "planAdvisor", "cancelledPaymentDay", "paysMonth",
   "paysAdjustment", "reconnectionCustomerName", "reconnectionCustomerId", "reconnectionTechnician", "paymentDay", "reconnectionAdvisor",
   "invoiceNumber", "waitingDay", "creditCustomerId", "creditAdvisor", "holderCustomerId", "oldHolder", "newHolder", "holderAdvisor",
   "paymentDateCustomerId", "newPaymentDay", "paymentDateAdvisor"
@@ -209,10 +212,14 @@ function saveRecordDraft() {
 
 function renderRecord() {
   const isReconnection = recordType.value === "reconnection";
+  const isCancelledReconnection = recordType.value === "cancelledreconnection";
   const isCredit = recordType.value === "credit";
   const isHolderChange = recordType.value === "holder";
   const isPaymentDateChange = recordType.value === "paymentdate";
   planFields.hidden = isReconnection || isCredit || isHolderChange || isPaymentDateChange;
+  planCustomerLookup.hidden = isCancelledReconnection;
+  cancelledPaymentDayField.hidden = !isCancelledReconnection;
+  planTechnicianLabel.textContent = isCancelledReconnection ? "Técnico" : "Técnico (opcional)";
   reconnectionFields.hidden = !isReconnection;
   creditFields.hidden = !isCredit;
   holderFields.hidden = !isHolderChange;
@@ -232,6 +239,15 @@ function renderRecord() {
     const paymentDateText = paymentDay ? ` queda con fecha de pago los ${paymentDay} de cada mes` : "";
     const advisorText = advisor ? ` - ${advisor}` : "";
     recordOutput.value = `${date} RECONEXION: Se ajusta factura cliente paga ${payments}${technicianText}${paymentDateText}${advisorText}`;
+  } else if (isCancelledReconnection) {
+    const paymentDay = document.querySelector("#cancelledPaymentDay").value.trim();
+    const plan = document.querySelector("#planName").value.trim();
+    const price = String(document.querySelector("#planPrice").value).replace(/\D/g, "");
+    const technician = document.querySelector("#planTechnician").value.trim();
+    const advisor = document.querySelector("#planAdvisor").value.trim();
+    const paymentText = paymentDay ? `Se ajusta fecha de pago a los días ${paymentDay} de cada mes` : "Se ajusta fecha de pago";
+    const planText = plan ? `Queda con plan ${plan}${price ? ` ${price}` : ""}` : "";
+    recordOutput.value = `${date} RECONEXION: ${paymentText}${planText ? ` - ${planText}` : ""}${technician ? ` - ${technician}` : ""}${advisor ? ` - ${advisor}` : ""}`;
   } else if (isCredit) {
     const invoice = document.querySelector("#invoiceNumber").value.trim();
     const waitingDay = document.querySelector("#waitingDay").value.trim();
@@ -290,7 +306,23 @@ managementQuickLinkSets.forEach(({ input, links }) => {
   field.addEventListener("input", () => updateQuickLinks(field.value, links));
 });
 refreshManagementQuickLinks();
-document.querySelector("#copyRecord").addEventListener("click", () => copyValue(recordOutput, recordStatus));
+document.querySelector("#copyRecord").addEventListener("click", () => {
+  if (recordType.value === "cancelledreconnection") {
+    const day = Number(document.querySelector("#cancelledPaymentDay").value);
+    const requiredFields = [
+      [day >= 1 && day <= 31, "Ingresa un día de pago entre 1 y 31."],
+      [Boolean(document.querySelector("#planName").value), "Selecciona un plan."],
+      [Boolean(document.querySelector("#planTechnician").value.trim()), "Ingresa el técnico."],
+      [Boolean(document.querySelector("#planAdvisor").value.trim()), "Ingresa el asesor."]
+    ];
+    const missing = requiredFields.find(([valid]) => !valid);
+    if (missing) {
+      recordStatus.textContent = missing[1];
+      return;
+    }
+  }
+  copyValue(recordOutput, recordStatus);
+});
 const createInvoiceReminderButton = document.querySelector("#createInvoiceReminder");
 const invoiceReminderStatus = document.querySelector("#invoiceReminderStatus");
 createInvoiceReminderButton.addEventListener("click", () => {

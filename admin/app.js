@@ -4,6 +4,20 @@ const views = { dashboard: "Dashboard", advisors: "Asesores", sections: "Seccion
 const state = { firebase: null, user: null, profile: null, advisors: [], roles: [], view: "dashboard", selectedAdvisor: "", selectedRole: "asesor", roleDraft: false, roleEditorOpen: false, expandedRoleId: "", busy: false, isSystemAdmin: false, roleAdminPermissions: {} };
 const $ = selector => document.querySelector(selector);
 const host = $("#adminView");
+const ADMIN_THEME_KEY = "intercol_theme_v2";
+function applyAdminTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const button = $("#adminThemeToggle");
+  button.innerHTML = `${theme === "dark" ? "☀" : "☾"} <span>${theme === "dark" ? "Claro" : "Oscuro"}</span>`;
+  button.setAttribute("aria-label", `Cambiar al tema ${theme === "dark" ? "claro" : "oscuro"}`);
+  button.title = `Cambiar al tema ${theme === "dark" ? "claro" : "oscuro"}`;
+  try { localStorage.setItem(ADMIN_THEME_KEY, theme); } catch { /* Theme still applies for this session. */ }
+}
+function toggleAdminTheme() {
+  applyAdminTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
+}
+applyAdminTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+$("#adminThemeToggle").addEventListener("click", toggleAdminTheme);
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])); }
 function listSections() { return (window.INTERCOL_SECTIONS || []).filter(section => !section.hideFromLists && section.id !== "acceso"); }
 function listPermissionSections() { return [...listSections().filter(section => section.requiresAuth), { id: "roles-permisos", name: "Roles y permisos", description: "Administrar roles y sus permisos." }]; }

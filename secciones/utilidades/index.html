@@ -28,18 +28,21 @@
         <div class="tool-actions"><button type="button" class="clear-button" id="clearPrice">Limpiar</button><span id="priceStatus" class="tool-status" role="status" aria-live="polite"></span></div>
       </article>
       <article class="utility-card utility-tool record-tool" aria-labelledby="recordTitle">
-        <header class="tool-heading"><div><span class="tool-number">03</span><h2 id="recordTitle">ANOTACIONES</h2><p>Prepara anotaciones de cambio de plan, reconexión, abono o cambio de titular.</p></div></header>
+        <header class="tool-heading"><div><span class="tool-number">03</span><h2 id="recordTitle">ANOTACIONES</h2><p>Prepara anotaciones de cambio de plan, reconexión, reconexión de cliente cancelado, abono o cambio de titular.</p></div></header>
         <label class="field-label" for="recordType">Tipo de gestión</label>
-        <select id="recordType"><option value="plan">Cambio de plan</option><option value="reconnection">Reconexión</option><option value="credit">Abono</option><option value="holder">Cambio de titular</option><option value="paymentdate">Cambio de fecha de pago</option></select>
+        <select id="recordType"><option value="plan">Cambio de plan</option><option value="reconnection">Reconexión</option><option value="cancelledreconnection">Reconexion cliente cancelado</option><option value="credit">Abono</option><option value="holder">Cambio de titular</option><option value="paymentdate">Cambio de fecha de pago</option></select>
         <div class="date-display"><span>Fecha</span><strong id="recordDate"></strong></div>
         <div id="planFields" class="record-fields">
           <input id="planName" type="hidden"><input id="planPrice" type="hidden">
-          <label class="field-label" for="planCustomerId">Cédula</label><input id="planCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula">
-          <nav class="quick-links" aria-label="Enlaces rápidos de cambio de plan"><span>Enlaces rápidos</span><a id="planOnuQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ONU ↗</a><a id="planHistoryQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">HISTORIAL DE PAGO ↗</a><a id="planAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a><a id="planDiscountQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">DESCUENTOS ↗</a></nav>
+          <div id="planCustomerLookup" class="record-fields">
+            <label class="field-label" for="planCustomerId">Cédula</label><input id="planCustomerId" type="text" inputmode="numeric" placeholder="Número de cédula">
+            <nav class="quick-links" aria-label="Enlaces rápidos de cambio de plan"><span>Enlaces rápidos</span><a id="planOnuQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ONU ↗</a><a id="planHistoryQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">HISTORIAL DE PAGO ↗</a><a id="planAnnotationsQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">ANOTACIONES ↗</a><a id="planDiscountQuickLink" class="quick-link" target="_blank" rel="noopener noreferrer" aria-disabled="true">DESCUENTOS ↗</a></nav>
+          </div>
           <div class="plan-group special-plans"><h3>Planes especiales</h3><div id="specialPlanChoices" class="plan-options"></div></div>
           <div class="plan-group general-plans"><h3>Planes generales</h3><div id="generalPlanChoices" class="plan-options"></div></div>
           <div class="selected-plan" id="selectedPlanText">Selecciona un plan</div>
-          <label class="field-label" for="planTechnician">Técnico (opcional)</label><input id="planTechnician" type="text" placeholder="Nombre del técnico">
+          <div id="cancelledPaymentDayField" hidden><label class="field-label" for="cancelledPaymentDay">Fecha de pago (día del mes)</label><input id="cancelledPaymentDay" type="number" min="1" max="31" step="1" placeholder="Ej. 6"></div>
+          <label id="planTechnicianLabel" class="field-label" for="planTechnician">Técnico (opcional)</label><input id="planTechnician" type="text" placeholder="Nombre del técnico">
           <label class="field-label" for="planAdvisor">Asesor</label><input id="planAdvisor" type="text" placeholder="Nombre del asesor">
         </div>
         <div id="reconnectionFields" class="record-fields" hidden>

@@ -6,6 +6,7 @@
   <meta name="description" content="Panel independiente de administración de INTERCOL.">
   <title>Administración · INTERCOL</title>
   <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <script>try{const theme=localStorage.getItem("intercol_theme_v2");document.documentElement.dataset.theme=theme==="dark"||theme==="light"?theme:(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch{}</script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -24,13 +25,13 @@
       <button class="admin-nav-item" type="button" data-view="sections"><span>▣</span>Secciones</button>
       <button class="admin-nav-item" type="button" data-view="permissions"><span>⚿</span>Roles y permisos</button>
 
-      <div class="sidebar-note"><span class="status-dot"></span><span>Consola independiente<br><small>INTERCOL</small></span></div>
+      <a class="sidebar-note sidebar-home-link" href="../index.html" title="Volver al panel principal"><span class="status-dot" aria-hidden="true"></span><span>Volver al panel principal<br><small>INTERCOL</small></span></a>
     </aside>
 
     <main class="admin-main">
       <header class="admin-topbar">
         <div><span class="eyebrow">ADMINISTRACIÓN DEL SISTEMA</span><h1 id="adminPageTitle">Dashboard</h1></div>
-        <div class="admin-topbar-actions"><span class="admin-badge" id="adminStatus"><span class="status-dot"></span>Conectando con Firebase…</span><button type="button" class="logout-button" id="adminSignOut" hidden>Cerrar sesión</button></div>
+        <div class="admin-topbar-actions"><button type="button" class="theme-toggle" id="adminThemeToggle" aria-label="Cambiar tema">☾ <span>Oscuro</span></button><span class="admin-badge" id="adminStatus"><span class="status-dot"></span>Conectando con Firebase…</span><button type="button" class="logout-button" id="adminSignOut" hidden>Cerrar sesión</button></div>
       </header>
 
       <div class="admin-content" id="adminView" aria-live="polite"></div>

@@ -12,3 +12,35 @@
 body.admin-auth-only{min-height:100vh;background:radial-gradient(ellipse at top left,#eeecff 0,transparent 45%),var(--canvas)}.admin-auth-only .admin-shell{display:block;min-height:100vh}.admin-auth-only .admin-sidebar,.admin-auth-only .admin-topbar,.admin-auth-only .admin-footer{display:none}.admin-auth-only .admin-main{display:grid;min-height:100vh;place-items:center;margin:0;padding:32px}.admin-auth-only .admin-content{width:min(440px,100%);margin:0;padding:0}.admin-auth-only .login-card{width:100%;margin:0;padding:34px;border-color:#e5e2ff;box-shadow:0 24px 70px rgba(48,43,110,.12)}.admin-auth-only .login-card h2{font-size:26px}.admin-auth-only .login-card form{gap:10px}.admin-auth-only .login-card input{min-height:46px}.admin-auth-only .login-card .primary-button{min-height:46px}@media(max-width:520px){.admin-auth-only .admin-main{padding:18px}.admin-auth-only .login-card{padding:26px 22px}}
 body.admin-auth-only .access-denied{text-align:center}body.admin-auth-only .access-return{display:flex;align-items:center;justify-content:center;margin-top:20px;text-decoration:none}
 .admin-reset-link { display: block; margin: 12px auto 0; padding: 4px; border: 0; background: transparent; color: var(--purple); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.sidebar-home-link { text-decoration: none; transition: color .15s ease, background .15s ease; }
+.sidebar-home-link:hover { color: #fff; background: rgba(255,255,255,.06); }
+.sidebar-home-link:focus-visible { outline: 2px solid #a89fff; outline-offset: -2px; border-radius: 7px; }
+.theme-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 35px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text); font: 600 11px "DM Sans",sans-serif; cursor: pointer; }
+.theme-toggle:hover { border-color: var(--purple); color: var(--purple); }
+[data-theme="dark"] { color-scheme: dark; --canvas:#0b1020; --surface:#111a2b; --text:#edf1fc; --muted:#a4afc5; --line:#29364c; --nav:#0d1423; --nav-muted:#a1a9bf; --purple:#8176ff; --purple-soft:#242344; --shadow:0 12px 35px rgba(0,0,0,.18); }
+[data-theme="dark"] .admin-topbar { background:rgba(13,20,35,.92); }
+[data-theme="dark"] .welcome-card { border-color:#343052; background:linear-gradient(110deg,#1c1b38 0%,#111a2b 75%); }
+[data-theme="dark"] .metric-icon.purple,[data-theme="dark"] .empty-icon { background:#262344; color:#a59cff; }
+[data-theme="dark"] .metric-icon.blue { background:#172a44; color:#80b5ff; }
+[data-theme="dark"] .metric-icon.amber { background:#382a19; color:#f0b85c; }
+[data-theme="dark"] .empty-panel { border-color:#34415a; background:rgba(17,26,43,.62); }
+[data-theme="dark"] .coming-soon { border-color:#343052; background:#1d1d38; color:#b4adff; }
+[data-theme="dark"] .login-card input,[data-theme="dark"] .panel-toolbar input,[data-theme="dark"] .panel-toolbar select { background:#0b1020; color:var(--text); }
+[data-theme="dark"] th,[data-theme="dark"] td { border-color:#29364c; }
+[data-theme="dark"] thead th { background:#151f32; color:#a4afc5; }
+[data-theme="dark"] .state-pill,[data-theme="dark"] .catalog-access { background:#262344; color:#b4adff; }
+[data-theme="dark"] .catalog-access.public { background:#153327; color:#8bd7b0; }
+[data-theme="dark"] .catalog-access.private { background:#382a19; color:#f0c16f; }
+[data-theme="dark"] .catalog-icon,[data-theme="dark"] .quick-icon { background:#262344; color:#a59cff; }
+[data-theme="dark"] .admin-auth-only { background:radial-gradient(ellipse at top left,#1b1a38 0,transparent 45%),var(--canvas); }
+[data-theme="dark"] .admin-auth-only .login-card { border-color:#343052; }
+[data-theme="dark"] .admin-auth-only .login-card { box-shadow:0 24px 70px rgba(0,0,0,.28); }
+[data-theme="dark"] .admin-auth-only .login-card input { border-color:var(--line); }
+[data-theme="dark"] .admin-badge { color:var(--muted); }
+[data-theme="dark"] .admin-badge.is-error { border-color:#65323c; background:#2b1820; color:#ff9eaa; }
+[data-theme="dark"] .role-key,[data-theme="dark"] .role-permission-none,[data-theme="dark"] .role-detail-action.denied { background:#202b3e; color:#a4afc5; }
+[data-theme="dark"] .role-permission-summary,[data-theme="dark"] .role-card-actions,[data-theme="dark"] .role-detail-row { border-color:#29364c; }
+[data-theme="dark"] .role-permission-details { border-color:#29364c; background:#0e1728; }
+[data-theme="dark"] .role-permission-chip,[data-theme="dark"] .role-detail-action.allowed { background:#153327; color:#8bd7b0; }
+[data-theme="dark"] .permission-check,[data-theme="dark"] .bulk-check { color:var(--muted); }
+[data-theme="dark"] .permission-panel thead th { background:#151f32; }

@@ -11,7 +11,11 @@ const openAllOnusButton = document.querySelector("#openAllOnus");
 const popupStatus = document.querySelector("#popupStatus");
 const copySheetButton = document.querySelector("#copySheet");
 const copyStatus = document.querySelector("#copyStatus");
+const portAnnotationOutput = document.querySelector("#portAnnotationOutput");
+const copyPortAnnotationButton = document.querySelector("#copyPortAnnotation");
+const portAnnotationStatus = document.querySelector("#portAnnotationStatus");
 const markBoxVerifiedButton = document.querySelector("#markBoxVerified");
+const cancelBoxEditButton = document.querySelector("#cancelBoxEdit");
 const verifiedList = document.querySelector("#verifiedList");
 const verifiedDetail = document.querySelector("#verifiedDetail");
 const verifiedStatus = document.querySelector("#verifiedStatus");
@@ -30,6 +34,18 @@ const onuUrl = cedula => `https://intercolwisp.smartolt.com/onu/configured?free_
 const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponent(cedula)}@cibercitywisp/#set1`;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const boxData = () => Object.fromEntries(new FormData(boxForm).entries());
+const portActionFor = user => user?.portAction || (user?.orangeBackground ? "cancelled" : "");
+const portActionText = action => ({
+  cancelled: "SE TOMA PUERTO CANCELADO",
+  splitter: "SE COLOCA SPLITTER",
+  addressChange: "Cliente cambio de dirección",
+  notRegistered: "Cliente no registra"
+}[action] || "");
+const formatCurrentTime = () => {
+  const now = new Date();
+  const hour = now.getHours();
+  return `${String(hour % 12 || 12).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}${hour >= 12 ? "pm" : "am"}`;
+};
 const portFor = user => Number(user.port) || 1;
 const listOrderFor = (user, index = 0) => Number(user.listOrder) || index + 1;
 const physicalPortFor = port => ((port - 1) % 8) + 1;
@@ -38,6 +54,9 @@ const splitterColorFor = port => `splitter-color-${((splitterFor(port) - 1) % 4)
 const realPortLabel = (port, boxType) => boxType === "x16"
   ? `<span class="splitter-badge ${splitterColorFor(port)}">Splitter ${splitterFor(port)}</span><span>Puerto ${physicalPortFor(port)}</span>`
   : `<span>Puerto ${port}</span>`;
+const realPortDisplayLabel = (port, boxType) => boxType === "x16"
+  ? `<span class="splitter-badge ${splitterColorFor(port)}">Splitter ${splitterFor(port)}</span><span>Puerto real ${physicalPortFor(port)}</span>`
+  : `<span>Puerto real ${port}</span>`;
 
 function requestAdvisorLogin() {
   verifiedStatus.textContent = "Inicia sesión para guardar y consultar las cajas verificadas.";
@@ -103,8 +122,9 @@ function renderVerifiedBoxes() {
     button.className = `verified-row ${verifiedDetail.dataset.boxId === box.id ? "selected" : ""}`;
     const title = document.createElement("strong"); title.textContent = `${box.numeroCaja || "Sin número"} · ${String(box.tipoCaja || "").toUpperCase()}`;
     const summary = document.createElement("span"); summary.textContent = `${box.direccion || "Sin dirección"} · ${box.tecnico || "Sin técnico"} · ${formatBoxDate(box.fecha)}`;
+    const advisor = document.createElement("span"); advisor.className = "verified-row-advisor"; advisor.textContent = `Asesor: ${box.asesor || "Sin asesor"}`;
     const count = document.createElement("small"); count.textContent = `${Array.isArray(box.cedulas) ? box.cedulas.length : 0} puertos`;
-    button.append(title, summary, count);
+    button.append(title, summary, advisor, count);
     button.addEventListener("click", () => showVerifiedBox(box));
     verifiedList.appendChild(button);
   });
@@ -115,8 +135,9 @@ function showVerifiedBox(box) {
   const safeLink = safeFilterLink(box.link);
   const usersMarkup = (Array.isArray(box.cedulas) ? box.cedulas : []).slice().sort((a, b) => Number(a.puertoTecnico) - Number(b.puertoTecnico)).map(user => {
     const realPort = Number(user.puertoReal) || Number(user.puertoTecnico) || 1;
-    const flagged = Boolean(user.fondoNaranja);
-    return `<article class="verified-port ${flagged ? "orange-marked" : ""}"><div class="verified-port-identity"><strong>${escapeHtml(user.cedula || "")}</strong>${flagged ? '<span class="orange-flag">Fondo naranja</span>' : ""}</div><div class="verified-port-data"><span>Puerto (lista del técnico): <b>${escapeHtml(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPortLabel(realPort, box.tipoCaja)}</b></span></div>${user.comentario ? `<p>${escapeHtml(user.comentario)}</p>` : ""}</article>`;
+    const action = user.accionPuerto || (user.fondoNaranja ? "cancelled" : "");
+    const actionClass = action === "cancelled" ? "action-cancelled" : action === "splitter" ? "action-splitter" : action === "addressChange" ? "action-address-change" : action === "notRegistered" ? "action-not-registered" : "";
+    return `<article class="verified-port ${actionClass}"><div class="verified-port-identity"><strong>${escapeHtml(user.cedula || "")}</strong>${action ? `<span class="port-action-badge">${portActionText(action)}</span>` : ""}</div><div class="verified-port-data"><span>Puerto (lista del técnico): <b>${escapeHtml(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPortLabel(realPort, box.tipoCaja)}</b></span></div>${user.comentario ? `<p>${escapeHtml(user.comentario)}</p>` : ""}</article>`;
   }).join("");
   const canEdit = Boolean(advisorAuth.user && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
   const actions = canEdit ? `<div class="verified-record-actions"><button type="button" class="secondary" id="editVerifiedBox">Editar caja</button><button type="button" class="danger" id="deleteVerifiedBox">Eliminar caja</button></div>` : "";
@@ -146,11 +167,13 @@ function beginVerifiedBoxEdit(box) {
     port: Number(user.puertoReal) || Number(user.puertoTecnico) || 1,
     listOrder: Number(user.puertoTecnico) || index + 1,
     comment: String(user.comentario || ""),
-    orangeBackground: Boolean(user.fondoNaranja)
+    orangeBackground: Boolean(user.fondoNaranja),
+    portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : "")
   })));
   selectedId = users[0]?.id || null;
   editingVerifiedBoxId = box.id;
   markBoxVerifiedButton.textContent = "Guardar cambios";
+  cancelBoxEditButton.hidden = false;
   copyStatus.textContent = `Editando ${box.numeroCaja || "la caja verificada"}. Guarda los cambios con el botón “Guardar cambios”.`;
   if (selectedId) selectUser(selectedId);
   else detailPanel.innerHTML = '<div class="detail-placeholder"><span class="detail-icon">⌕</span><strong>Aún no hay cédulas</strong><p>Agrega las identificaciones de la caja.</p></div>';
@@ -206,7 +229,8 @@ function restoreBoxDraft() {
       ...user,
       port: Number.isInteger(Number(user.port)) && Number(user.port) > 0 ? Number(user.port) : index + 1,
       listOrder: Number.isInteger(Number(user.listOrder)) && Number(user.listOrder) > 0 ? Number(user.listOrder) : index + 1,
-      orangeBackground: Boolean(user.orangeBackground)
+      orangeBackground: Boolean(user.orangeBackground),
+      portAction: user.portAction || (user.orangeBackground ? "cancelled" : "")
     })));
     selectedId = users.some(user => user.id === draft.selectedId) ? draft.selectedId : users[0]?.id || null;
   } catch { /* Ignore an invalid saved draft and start a fresh form. */ }
@@ -223,6 +247,7 @@ function updateStatus() {
   statusText.textContent = ready ? `${data.boxType.toUpperCase()} · ${users.length} cédula${users.length === 1 ? "" : "s"}` : "Completa los datos de la caja";
   markBoxVerifiedButton.disabled = !ready || !users.length;
   markBoxVerifiedButton.textContent = editingVerifiedBoxId ? "Guardar cambios" : "Caja verificada";
+  cancelBoxEditButton.hidden = !editingVerifiedBoxId;
   updateSheetRows();
   saveBoxDraft();
 }
@@ -262,7 +287,8 @@ async function saveVerifiedBox() {
         puertoTecnico: listOrderFor(user),
         puertoReal: portFor(user),
         comentario: String(user.comment || ""),
-        fondoNaranja: Boolean(user.orangeBackground)
+        fondoNaranja: portActionFor(user) === "cancelled",
+        accionPuerto: portActionFor(user)
       }))
     };
     if (editingVerifiedBoxId) {
@@ -296,12 +322,15 @@ function resetBoxForm() {
   users.length = 0;
   selectedId = null;
   editingVerifiedBoxId = null;
+  cancelBoxEditButton.hidden = true;
+  markBoxVerifiedButton.textContent = "Caja verificada";
   cedulaInput.value = "";
   inlineError.textContent = "";
   detailPanel.innerHTML = '<div class="detail-placeholder"><span class="detail-icon">⌕</span><strong>Selecciona una cédula</strong><p>Aquí verás el puerto asignado y los accesos a los detalles del usuario.</p></div>';
   try { localStorage.removeItem(BOX_DRAFT_KEY); } catch { /* Ignore unavailable local storage. */ }
   renderList();
   updateStatus();
+  updatePortAnnotation();
   copyStatus.textContent = "Los datos de la caja se limpiaron. Puedes registrar la siguiente.";
 }
 
@@ -327,7 +356,7 @@ function updateSheetRows() {
 function renderList() {
   users.sort((a, b) => listOrderFor(a) - listOrderFor(b));
   const boxType = boxData().boxType;
-  userList.innerHTML = users.map((user, index) => `<li><div class="user-row-shell"><button class="user-row ${user.id === selectedId ? "selected" : ""} ${user.orangeBackground ? "orange-marked" : ""}" type="button" data-user-id="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}"><span class="port-tag">Lista ${listOrderFor(user, index)}</span><span class="user-id">${escapeHtml(user.cedula)}</span><span class="port-real-tag">${realPortLabel(portFor(user), boxType)}</span></button><button class="identity-edit-button" type="button" data-edit-identity="${escapeHtml(user.id)}" title="Editar cédula" aria-label="Editar cédula de ${escapeHtml(user.cedula)}">✎</button><button class="identity-delete-button" type="button" data-delete-user="${escapeHtml(user.id)}" title="Eliminar cédula" aria-label="Eliminar cédula ${escapeHtml(user.cedula)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></button></div></li>`).join("");
+  userList.innerHTML = users.map((user, index) => { const action = portActionFor(user); const actionClass = action === "cancelled" ? "action-cancelled" : action === "splitter" ? "action-splitter" : action === "addressChange" ? "action-address-change" : action === "notRegistered" ? "action-not-registered" : "action-active"; return `<li><div class="user-row-shell"><button class="user-row ${user.id === selectedId ? "selected" : ""} ${actionClass}" type="button" data-user-id="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}"><span class="port-tag">Puerto ${listOrderFor(user, index)}</span><span class="user-id">${escapeHtml(user.cedula)}</span><span class="port-real-tag">${realPortDisplayLabel(portFor(user), boxType)}</span></button><button class="identity-edit-button" type="button" data-edit-identity="${escapeHtml(user.id)}" title="Editar cédula" aria-label="Editar cédula de ${escapeHtml(user.cedula)}">✎</button><button class="identity-delete-button" type="button" data-delete-user="${escapeHtml(user.id)}" title="Eliminar cédula" aria-label="Eliminar cédula ${escapeHtml(user.cedula)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></button></div></li>`; }).join("");
   emptyUsers.hidden = users.length > 0;
   userCount.textContent = `${users.length} registro${users.length === 1 ? "" : "s"}`;
   openAllOnusButton.disabled = users.length === 0;
@@ -356,7 +385,7 @@ function startIdentityEdit(id) {
   const form = document.createElement("form");
   form.className = "user-inline-edit";
   const label = document.createElement("label");
-  label.textContent = `Editar cédula · Lista ${listOrderFor(user, users.indexOf(user))}`;
+  label.textContent = `Editar cédula · Puerto ${listOrderFor(user, users.indexOf(user))}`;
   const input = document.createElement("input");
   input.name = "identity";
   input.value = user.cedula;
@@ -388,13 +417,56 @@ function startIdentityEdit(id) {
   input.select();
 }
 
+function updatePortAnnotation() {
+  const data = boxData();
+  const user = users.find(item => item.id === selectedId);
+  const dateMatch = String(data.date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = dateMatch ? `${Number(dateMatch[3])}/${Number(dateMatch[2])}/${dateMatch[1]}` : "";
+  const action = portActionText(portActionFor(user));
+  const technician = String(data.technician || "").trim();
+  const advisor = String(data.advisor || "").trim();
+  const complete = Boolean(date && action && technician && advisor);
+  portAnnotationOutput.value = complete ? `${date} ${action} ${technician} - ${advisor} - ${formatCurrentTime()}` : "";
+  copyPortAnnotationButton.disabled = !complete;
+  if (!user) portAnnotationStatus.textContent = "Selecciona un puerto y una acción en su detalle.";
+  else if (!action) portAnnotationStatus.textContent = "Elige la acción en el detalle del puerto seleccionado.";
+  else if (!complete) portAnnotationStatus.textContent = "Completa la fecha, el técnico y el asesor en los datos de la caja.";
+  else portAnnotationStatus.textContent = `Anotación lista para ${user.cedula}.`;
+}
+
+function portCellComment(user) {
+  const action = portActionFor(user);
+  const comment = String(user.comment || "").trim();
+  const parts = [user.cedula];
+  if (["addressChange", "notRegistered"].includes(action)) {
+    const actionText = portActionText(action);
+    if (!comment.toLocaleLowerCase().startsWith(actionText.toLocaleLowerCase())) parts.push(actionText);
+    if (comment) parts.push(comment);
+  } else if (comment) parts.push(comment);
+  if (action) parts.push(formatCurrentTime());
+  return parts.map(cleanCell).filter(Boolean).join(" - ");
+}
+
+function changePortAction(user, nextAction) {
+  const previousText = portActionText(portActionFor(user));
+  let extraComment = String(user.comment || "").trim();
+  if (previousText && extraComment.toLocaleLowerCase().startsWith(previousText.toLocaleLowerCase())) {
+    extraComment = extraComment.slice(previousText.length).replace(/^\s*(?:[-–—·:]\s*)?/, "").trim();
+  }
+  const nextText = portActionText(nextAction);
+  user.portAction = nextAction;
+  user.orangeBackground = nextAction === "cancelled";
+  user.comment = [nextText, extraComment].filter(Boolean).join(" - ");
+}
+
 function selectUser(id) {
   selectedId = id;
   const user = users.find(item => item.id === id);
   if (!user) return;
   const data = boxData();
   const links = `<a class="detail-link" href="${onuUrl(user.cedula)}" target="_blank" rel="noopener noreferrer">ONU <span aria-hidden="true">↗</span></a><a class="detail-link" href="${notesUrl(user.cedula)}" target="_blank" rel="noopener noreferrer">Anotaciones <span aria-hidden="true">↗</span></a>`;
-  detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><dl class="detail-data"><div><dt>Orden de la lista del técnico</dt><dd>Lista ${listOrderFor(user, users.indexOf(user))}</dd></div><div><dt>Puerto real actual</dt><dd>${realPortLabel(portFor(user), data.boxType)}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml((data.boxType || "x8").toUpperCase())}</dd></div><div><dt>Número de caja</dt><dd>${escapeHtml(data.boxNumber || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(data.technician || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(data.advisor || "—")}</dd></div></dl><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment" placeholder="Ej. Se instaló primer splitter">${escapeHtml(user.comment || "")}</textarea><label class="orange-toggle"><input id="orangeBackground" type="checkbox" ${user.orangeBackground ? "checked" : ""}><span>Marcar fondo naranja en la celda de Excel</span></label><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
+  const currentAction = portActionFor(user);
+  detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><dl class="detail-data"><div><dt>Orden de la lista del técnico</dt><dd>Lista ${listOrderFor(user, users.indexOf(user))}</dd></div><div><dt>Puerto real actual</dt><dd>${realPortLabel(portFor(user), data.boxType)}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml((data.boxType || "x8").toUpperCase())}</dd></div><div><dt>Número de caja</dt><dd>${escapeHtml(data.boxNumber || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(data.technician || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(data.advisor || "—")}</dd></div></dl><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment" placeholder="Ej. Se instaló primer splitter">${escapeHtml(user.comment || "")}</textarea><fieldset class="port-action-choices"><legend>Acción del puerto</legend><label class="port-action-choice active ${!currentAction ? "selected" : ""}"><input type="radio" name="portAction" value="" ${!currentAction ? "checked" : ""}><span>Activo (sin marca)</span></label><label class="port-action-choice cancelled ${currentAction === "cancelled" ? "selected" : ""}"><input type="radio" name="portAction" value="cancelled" ${currentAction === "cancelled" ? "checked" : ""}><span>Se toma puerto cancelado</span></label><label class="port-action-choice splitter ${currentAction === "splitter" ? "selected" : ""}"><input type="radio" name="portAction" value="splitter" ${currentAction === "splitter" ? "checked" : ""}><span>Se coloca splitter</span></label><label class="port-action-choice address-change ${currentAction === "addressChange" ? "selected" : ""}"><input type="radio" name="portAction" value="addressChange" ${currentAction === "addressChange" ? "checked" : ""}><span>Cliente cambio de dirección</span></label><label class="port-action-choice not-registered ${currentAction === "notRegistered" ? "selected" : ""}"><input type="radio" name="portAction" value="notRegistered" ${currentAction === "notRegistered" ? "checked" : ""}><span>Cliente no registra</span></label></fieldset><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
   const editForm = document.createElement("form");
   editForm.className = "record-edit-form";
   editForm.innerHTML = `<label for="editIdentity">Cédula o dirección</label><input id="editIdentity" name="identity" required value="${escapeHtml(user.cedula)}"><label for="editPort">Puerto real (1–${data.boxType === "x16" ? "16" : "8"})</label><input id="editPort" name="port" type="number" min="1" max="${data.boxType === "x16" ? "16" : "8"}" step="1" required value="${portFor(user)}"><button type="submit" class="secondary">Guardar cambios</button>`;
@@ -405,12 +477,30 @@ function selectUser(id) {
     updateSheetRows();
     saveBoxDraft();
   });
-  detailPanel.querySelector("#orangeBackground").addEventListener("change", event => {
-    user.orangeBackground = event.target.checked;
+  detailPanel.querySelectorAll('input[name="portAction"]').forEach(input => input.addEventListener("change", event => {
+    changePortAction(user, event.target.value);
+    detailPanel.querySelector("#portComment").value = user.comment;
+    saveBoxDraft();
     renderList();
-  });
+    updatePortAnnotation();
+    selectUser(user.id);
+  }));
+  updatePortAnnotation();
   renderList();
 }
+
+copyPortAnnotationButton.addEventListener("click", async () => {
+  updatePortAnnotation();
+  if (!portAnnotationOutput.value) return;
+  try {
+    await navigator.clipboard.writeText(portAnnotationOutput.value);
+    portAnnotationStatus.textContent = "Anotación copiada.";
+  } catch {
+    portAnnotationOutput.focus();
+    portAnnotationOutput.select();
+    portAnnotationStatus.textContent = "Anotación seleccionada; cópiala con Ctrl+C.";
+  }
+});
 
 userForm.addEventListener("submit", event => {
   event.preventDefault();
@@ -430,7 +520,7 @@ userForm.addEventListener("submit", event => {
   let port = 1;
   while (occupiedPorts.has(port) && port <= maxPort) port += 1;
   if (port > maxPort) port = ((listOrder - 1) % maxPort) + 1;
-  const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false };
+  const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false, portAction: "" };
   users.push(user);
   cedulaInput.value = "";
   selectUser(user.id);
@@ -440,6 +530,7 @@ userForm.addEventListener("submit", event => {
 boxForm.addEventListener("input", () => {
   updateStatus();
   if (selectedId) selectUser(selectedId);
+  else updatePortAnnotation();
 });
 
 document.querySelector("#clearUsers").addEventListener("click", () => {
@@ -477,11 +568,12 @@ function sheetTableMarkup() {
   ].map(value => `<td rowspan="${blockRows}" style="${base}text-align:center;min-width:75px;">${escapeHtml(cleanCell(value))}</td>`).join("");
   const rows = portRows.map((slot, index) => {
     const portUsers = slot ? users.filter(item => listOrderFor(item) === slot.port) : [];
-    const comment = portUsers.flatMap(item => [item.cedula, item.comment]).filter(Boolean).map(cleanCell).join(" · ");
-    const highlighted = portUsers.some(item => item.orangeBackground);
+    const comment = portUsers.map(portCellComment).filter(Boolean).join(" · ");
+    const action = portUsers.map(portActionFor).find(Boolean) || "";
     const general = index === 0 ? generalCells : "";
     const label = slot?.label ?? "";
-    const cellStyle = `${base}text-align:left;min-width:280px;${highlighted ? "background-color:#ff9900;color:#111827;" : ""}`;
+    const actionColor = action === "cancelled" ? "#ff9900" : action === "splitter" ? "#38bdf8" : action === "addressChange" ? "#c084fc" : action === "notRegistered" ? "#fb7185" : "";
+    const cellStyle = `${base}text-align:left;min-width:280px;${actionColor ? `background-color:${actionColor};color:#111827;` : ""}`;
     return `<tr>${general}<td style="${base}text-align:center;width:28px;">${label}</td><td style="${cellStyle}">${escapeHtml(comment)}</td></tr>`;
   }).join("");
   return `<table style="border-collapse:collapse;border-spacing:0;"><tbody>${rows}</tbody></table>`;
@@ -495,7 +587,7 @@ async function copyFormattedBlock() {
   const general = [`${day}/${month}/${year}`, data.boxNumber, data.address, data.technician, data.advisor];
   const plainRows = portRows.map((slot, index) => [
     ...(index === 0 ? general : ["", "", "", "", ""]), slot?.label ?? "",
-    slot ? users.filter(user => listOrderFor(user) === slot.port).flatMap(user => [user.cedula, user.comment]).filter(Boolean).join(" · ") : ""
+    slot ? users.filter(user => listOrderFor(user) === slot.port).map(portCellComment).filter(Boolean).join(" · ") : ""
   ].map(cleanCell).join("\t")).join("\n");
   const html = sheetTableMarkup();
   if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
@@ -516,6 +608,11 @@ async function copyFormattedBlock() {
 
 copySheetButton.addEventListener("click", copyFormattedBlock);
 markBoxVerifiedButton.addEventListener("click", saveVerifiedBox);
+cancelBoxEditButton.addEventListener("click", () => {
+  if (!editingVerifiedBoxId) return;
+  resetBoxForm();
+  copyStatus.textContent = "Edición cancelada. Puedes empezar otra caja.";
+});
 verifiedSearch.addEventListener("input", renderVerifiedBoxes);
 verifiedType.addEventListener("change", renderVerifiedBoxes);
 document.querySelector("#openPublicVerifiedList").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_OPEN_VERIFIED_BOXES" }, "*"));
@@ -573,6 +670,7 @@ const resizeSection = () => window.parent.postMessage({ type: "INTERCOL_SECTION_
 new ResizeObserver(resizeSection).observe(document.documentElement);
 renderList();
 if (selectedId) selectUser(selectedId);
+else updatePortAnnotation();
 syncVerifiedBoxes();
 window.addEventListener("load", resizeSection);
 setTimeout(resizeSection, 80);
