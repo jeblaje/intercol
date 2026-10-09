@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Verificar Caja · INTERCOL</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261009-comment-state-groups-2">
 </head>
 <body>
   <main class="section-app">
@@ -53,7 +53,7 @@
       <header class="card-header"><div class="step">03</div><div><h2 id="exportTitle">Copiar a la hoja de cajas</h2><p>Prepara una fila por puerto, en el orden de las columnas de tu Excel.</p></div></header>
       <div class="card-body export-body">
         <div class="export-actions"><button type="button" class="primary" id="copySheet" disabled>Copiar bloque con formato</button><button type="button" class="secondary" id="markBoxVerified" disabled>Caja verificada</button><button type="button" class="secondary" id="cancelBoxEdit" hidden>Cancelar edición</button><span id="copyStatus" class="copy-status" role="status" aria-live="polite">Completa los datos de la caja y agrega las cédulas.</span></div>
-        <p class="form-hint">Pega en la primera celda del bloque vacío. La x16 se copia como puertos 1–8, dos filas vacías y otra vez 1–8. En pantalla se conserva el orden de la lista del técnico y se muestra aparte el puerto real. La acción seleccionada en cada puerto define el color de su celda al copiar.</p>
+        <p class="form-hint">Pega en la primera celda del bloque vacío. La x16 se copia como puertos 1–8, dos filas vacías y otra vez 1–8. En pantalla se conserva el orden de la lista del técnico y se muestra aparte el puerto real. El estado del servicio define el color de cada puerto y la acción tiñe su comentario.</p>
       </div>
     </section>
 
@@ -62,12 +62,12 @@
       <div class="card-body verified-body">
         <div class="verified-filters"><label class="sr-only" for="verifiedSearch">Buscar cajas</label><input id="verifiedSearch" type="search" placeholder="Buscar por caja, dirección, técnico, asesor o cédula"><label class="sr-only" for="verifiedType">Filtrar tipo de caja</label><select id="verifiedType"><option value="all">Todas las cajas</option><option value="x8">X8</option><option value="x16">X16</option></select></div>
         <p id="verifiedStatus" class="verified-status" role="status" aria-live="polite">Cargando cajas verificadas…</p>
-        <div class="verified-layout"><div id="verifiedList" class="verified-list"></div><aside id="verifiedDetail" class="verified-detail"><div class="detail-placeholder"><span class="detail-icon">▤</span><strong>Selecciona una caja</strong><p>Su ficha aparecerá aquí con los puertos, comentarios y marcas naranjas.</p></div></aside></div>
+        <div class="verified-layout"><div id="verifiedList" class="verified-list"></div><aside id="verifiedDetail" class="verified-detail"><div class="detail-placeholder"><span class="detail-icon">▤</span><strong>Selecciona una caja</strong><p>Su ficha aparecerá aquí con el estado y los comentarios de cada puerto.</p></div></aside></div>
       </div>
     </section>
 
   </main>
-  <script src="script.js"></script>
+  <script src="script.js?v=20261009-action-comment-state-order"></script>
 </body>
 </html>
 

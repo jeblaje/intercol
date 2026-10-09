@@ -35,6 +35,9 @@ const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponen
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const boxData = () => Object.fromEntries(new FormData(boxForm).entries());
 const portActionFor = user => user?.portAction || (user?.orangeBackground ? "cancelled" : "");
+const serviceStatusFor = user => user?.serviceStatus || user?.estadoServicio || (portActionFor(user) === "cancelled" ? "cancelled" : portActionFor(user) === "notRegistered" ? "notRegistered" : "active");
+const serviceStatusText = status => ({ active: "ACTIVO", suspended: "SUSPENDIDO", cancelled: "CANCELADO", notRegistered: "NO REGISTRA" }[status] || "ACTIVO");
+const serviceStatusClass = status => ({ active: "service-active", suspended: "service-suspended", cancelled: "service-cancelled", notRegistered: "service-not-registered" }[status] || "service-active");
 const portActionText = action => ({
   cancelled: "SE TOMA PUERTO CANCELADO",
   splitter: "SE COLOCA SPLITTER",
@@ -135,9 +138,11 @@ function showVerifiedBox(box) {
   const safeLink = safeFilterLink(box.link);
   const usersMarkup = (Array.isArray(box.cedulas) ? box.cedulas : []).slice().sort((a, b) => Number(a.puertoTecnico) - Number(b.puertoTecnico)).map(user => {
     const realPort = Number(user.puertoReal) || Number(user.puertoTecnico) || 1;
-    const action = user.accionPuerto || (user.fondoNaranja ? "cancelled" : "");
-    const actionClass = action === "cancelled" ? "action-cancelled" : action === "splitter" ? "action-splitter" : action === "addressChange" ? "action-address-change" : action === "notRegistered" ? "action-not-registered" : "";
-    return `<article class="verified-port ${actionClass}"><div class="verified-port-identity"><strong>${escapeHtml(user.cedula || "")}</strong>${action ? `<span class="port-action-badge">${portActionText(action)}</span>` : ""}</div><div class="verified-port-data"><span>Puerto (lista del técnico): <b>${escapeHtml(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPortLabel(realPort, box.tipoCaja)}</b></span></div>${user.comentario ? `<p>${escapeHtml(user.comentario)}</p>` : ""}</article>`;
+    const action = user.accionPuerto || (!user.estadoServicio && user.fondoNaranja ? "cancelled" : "");
+    const state = user.estadoServicio || (action === "cancelled" ? "cancelled" : action === "notRegistered" ? "notRegistered" : "active");
+    const stateClass = serviceStatusClass(state);
+    const commentClass = action ? ` action-comment-${action === "addressChange" ? "address-change" : action === "notRegistered" ? "not-registered" : action}` : "";
+    return `<article class="verified-port ${stateClass}"><div class="verified-port-identity"><strong>${escapeHtml(user.cedula || "")}</strong><span class="service-state-badge">${serviceStatusText(state)}</span></div><div class="verified-port-data"><span>Puerto (lista del técnico): <b>${escapeHtml(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPortLabel(realPort, box.tipoCaja)}</b></span></div>${user.comentario ? `<p class="verified-port-comment${commentClass}">${escapeHtml(user.comentario)}</p>` : ""}</article>`;
   }).join("");
   const canEdit = Boolean(advisorAuth.user && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
   const actions = canEdit ? `<div class="verified-record-actions"><button type="button" class="secondary" id="editVerifiedBox">Editar caja</button><button type="button" class="danger" id="deleteVerifiedBox">Eliminar caja</button></div>` : "";
@@ -168,7 +173,8 @@ function beginVerifiedBoxEdit(box) {
     listOrder: Number(user.puertoTecnico) || index + 1,
     comment: String(user.comentario || ""),
     orangeBackground: Boolean(user.fondoNaranja),
-    portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : "")
+    portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : ""),
+    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active")
   })));
   selectedId = users[0]?.id || null;
   editingVerifiedBoxId = box.id;
@@ -230,7 +236,8 @@ function restoreBoxDraft() {
       port: Number.isInteger(Number(user.port)) && Number(user.port) > 0 ? Number(user.port) : index + 1,
       listOrder: Number.isInteger(Number(user.listOrder)) && Number(user.listOrder) > 0 ? Number(user.listOrder) : index + 1,
       orangeBackground: Boolean(user.orangeBackground),
-      portAction: user.portAction || (user.orangeBackground ? "cancelled" : "")
+      portAction: user.portAction || (user.orangeBackground ? "cancelled" : ""),
+      serviceStatus: user.serviceStatus || (user.portAction === "cancelled" || user.orangeBackground ? "cancelled" : user.portAction === "notRegistered" ? "notRegistered" : "active")
     })));
     selectedId = users.some(user => user.id === draft.selectedId) ? draft.selectedId : users[0]?.id || null;
   } catch { /* Ignore an invalid saved draft and start a fresh form. */ }
@@ -287,8 +294,9 @@ async function saveVerifiedBox() {
         puertoTecnico: listOrderFor(user),
         puertoReal: portFor(user),
         comentario: String(user.comment || ""),
-        fondoNaranja: portActionFor(user) === "cancelled",
-        accionPuerto: portActionFor(user)
+        fondoNaranja: false,
+        accionPuerto: portActionFor(user),
+        estadoServicio: serviceStatusFor(user)
       }))
     };
     if (editingVerifiedBoxId) {
@@ -356,7 +364,7 @@ function updateSheetRows() {
 function renderList() {
   users.sort((a, b) => listOrderFor(a) - listOrderFor(b));
   const boxType = boxData().boxType;
-  userList.innerHTML = users.map((user, index) => { const action = portActionFor(user); const actionClass = action === "cancelled" ? "action-cancelled" : action === "splitter" ? "action-splitter" : action === "addressChange" ? "action-address-change" : action === "notRegistered" ? "action-not-registered" : "action-active"; return `<li><div class="user-row-shell"><button class="user-row ${user.id === selectedId ? "selected" : ""} ${actionClass}" type="button" data-user-id="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}"><span class="port-tag">Puerto ${listOrderFor(user, index)}</span><span class="user-id">${escapeHtml(user.cedula)}</span><span class="port-real-tag">${realPortDisplayLabel(portFor(user), boxType)}</span></button><button class="identity-edit-button" type="button" data-edit-identity="${escapeHtml(user.id)}" title="Editar cédula" aria-label="Editar cédula de ${escapeHtml(user.cedula)}">✎</button><button class="identity-delete-button" type="button" data-delete-user="${escapeHtml(user.id)}" title="Eliminar cédula" aria-label="Eliminar cédula ${escapeHtml(user.cedula)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></button></div></li>`; }).join("");
+  userList.innerHTML = users.map((user, index) => { const status = serviceStatusFor(user); const stateClass = serviceStatusClass(status); return `<li><div class="user-row-shell"><button class="user-row ${user.id === selectedId ? "selected" : ""} ${stateClass}" type="button" data-user-id="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}"><span class="port-tag">Puerto ${listOrderFor(user, index)}</span><span class="user-id">${escapeHtml(user.cedula)}</span><span class="service-state-badge">${serviceStatusText(status)}</span><span class="port-real-tag">${realPortDisplayLabel(portFor(user), boxType)}</span></button><button class="identity-edit-button" type="button" data-edit-identity="${escapeHtml(user.id)}" title="Editar cédula" aria-label="Editar cédula de ${escapeHtml(user.cedula)}">✎</button><button class="identity-delete-button" type="button" data-delete-user="${escapeHtml(user.id)}" title="Eliminar cédula" aria-label="Eliminar cédula ${escapeHtml(user.cedula)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></button></div></li>`; }).join("");
   emptyUsers.hidden = users.length > 0;
   userCount.textContent = `${users.length} registro${users.length === 1 ? "" : "s"}`;
   openAllOnusButton.disabled = users.length === 0;
@@ -466,7 +474,9 @@ function selectUser(id) {
   const data = boxData();
   const links = `<a class="detail-link" href="${onuUrl(user.cedula)}" target="_blank" rel="noopener noreferrer">ONU <span aria-hidden="true">↗</span></a><a class="detail-link" href="${notesUrl(user.cedula)}" target="_blank" rel="noopener noreferrer">Anotaciones <span aria-hidden="true">↗</span></a>`;
   const currentAction = portActionFor(user);
-  detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><dl class="detail-data"><div><dt>Orden de la lista del técnico</dt><dd>Lista ${listOrderFor(user, users.indexOf(user))}</dd></div><div><dt>Puerto real actual</dt><dd>${realPortLabel(portFor(user), data.boxType)}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml((data.boxType || "x8").toUpperCase())}</dd></div><div><dt>Número de caja</dt><dd>${escapeHtml(data.boxNumber || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(data.technician || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(data.advisor || "—")}</dd></div></dl><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment" placeholder="Ej. Se instaló primer splitter">${escapeHtml(user.comment || "")}</textarea><fieldset class="port-action-choices"><legend>Acción del puerto</legend><label class="port-action-choice active ${!currentAction ? "selected" : ""}"><input type="radio" name="portAction" value="" ${!currentAction ? "checked" : ""}><span>Activo (sin marca)</span></label><label class="port-action-choice cancelled ${currentAction === "cancelled" ? "selected" : ""}"><input type="radio" name="portAction" value="cancelled" ${currentAction === "cancelled" ? "checked" : ""}><span>Se toma puerto cancelado</span></label><label class="port-action-choice splitter ${currentAction === "splitter" ? "selected" : ""}"><input type="radio" name="portAction" value="splitter" ${currentAction === "splitter" ? "checked" : ""}><span>Se coloca splitter</span></label><label class="port-action-choice address-change ${currentAction === "addressChange" ? "selected" : ""}"><input type="radio" name="portAction" value="addressChange" ${currentAction === "addressChange" ? "checked" : ""}><span>Cliente cambio de dirección</span></label><label class="port-action-choice not-registered ${currentAction === "notRegistered" ? "selected" : ""}"><input type="radio" name="portAction" value="notRegistered" ${currentAction === "notRegistered" ? "checked" : ""}><span>Cliente no registra</span></label></fieldset><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
+  const currentStatus = serviceStatusFor(user);
+  const actionCommentClass = currentAction ? ` action-${currentAction === "addressChange" ? "address-change" : currentAction === "notRegistered" ? "not-registered" : currentAction}` : "";
+  detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><fieldset class="port-control-group port-action-choices"><legend>Acción del puerto (se agrega al comentario)</legend><label class="port-action-choice neutral ${!currentAction ? "selected" : ""}"><input type="radio" name="portAction" value="" ${!currentAction ? "checked" : ""}><span>Sin acción</span></label><label class="port-action-choice cancelled ${currentAction === "cancelled" ? "selected" : ""}"><input type="radio" name="portAction" value="cancelled" ${currentAction === "cancelled" ? "checked" : ""}><span>Se toma puerto cancelado</span></label><label class="port-action-choice splitter ${currentAction === "splitter" ? "selected" : ""}"><input type="radio" name="portAction" value="splitter" ${currentAction === "splitter" ? "checked" : ""}><span>Se coloca splitter</span></label><label class="port-action-choice address-change ${currentAction === "addressChange" ? "selected" : ""}"><input type="radio" name="portAction" value="addressChange" ${currentAction === "addressChange" ? "checked" : ""}><span>Cliente cambio de dirección</span></label><label class="port-action-choice not-registered ${currentAction === "notRegistered" ? "selected" : ""}"><input type="radio" name="portAction" value="notRegistered" ${currentAction === "notRegistered" ? "checked" : ""}><span>Cliente no registra</span></label></fieldset><section class="port-editor-group comment-editor-group"><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment${actionCommentClass}" placeholder="Escribe un comentario o selecciona una acción">${escapeHtml(user.comment || "")}</textarea></section><fieldset class="port-control-group port-action-choices service-status-choices"><legend>Estado del servicio (define el color del puerto)</legend><label class="port-action-choice service-active ${currentStatus === "active" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="active" ${currentStatus === "active" ? "checked" : ""}><span>Activo</span></label><label class="port-action-choice service-suspended ${currentStatus === "suspended" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="suspended" ${currentStatus === "suspended" ? "checked" : ""}><span>Suspendido</span></label><label class="port-action-choice service-cancelled ${currentStatus === "cancelled" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="cancelled" ${currentStatus === "cancelled" ? "checked" : ""}><span>Cancelado</span></label><label class="port-action-choice service-not-registered ${currentStatus === "notRegistered" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="notRegistered" ${currentStatus === "notRegistered" ? "checked" : ""}><span>No registra</span></label></fieldset><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
   const editForm = document.createElement("form");
   editForm.className = "record-edit-form";
   editForm.innerHTML = `<label for="editIdentity">Cédula o dirección</label><input id="editIdentity" name="identity" required value="${escapeHtml(user.cedula)}"><label for="editPort">Puerto real (1–${data.boxType === "x16" ? "16" : "8"})</label><input id="editPort" name="port" type="number" min="1" max="${data.boxType === "x16" ? "16" : "8"}" step="1" required value="${portFor(user)}"><button type="submit" class="secondary">Guardar cambios</button>`;
@@ -480,9 +490,17 @@ function selectUser(id) {
   detailPanel.querySelectorAll('input[name="portAction"]').forEach(input => input.addEventListener("change", event => {
     changePortAction(user, event.target.value);
     detailPanel.querySelector("#portComment").value = user.comment;
+    detailPanel.querySelector("#portComment").className = `port-comment${event.target.value ? ` action-${event.target.value === "addressChange" ? "address-change" : event.target.value === "notRegistered" ? "not-registered" : event.target.value}` : ""}`;
     saveBoxDraft();
     renderList();
     updatePortAnnotation();
+    selectUser(user.id);
+  }));
+  detailPanel.querySelectorAll('input[name="serviceStatus"]').forEach(input => input.addEventListener("change", event => {
+    user.serviceStatus = event.target.value;
+    saveBoxDraft();
+    updateSheetRows();
+    renderList();
     selectUser(user.id);
   }));
   updatePortAnnotation();
@@ -520,7 +538,7 @@ userForm.addEventListener("submit", event => {
   let port = 1;
   while (occupiedPorts.has(port) && port <= maxPort) port += 1;
   if (port > maxPort) port = ((listOrder - 1) % maxPort) + 1;
-  const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false, portAction: "" };
+  const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false, portAction: "", serviceStatus: "active" };
   users.push(user);
   cedulaInput.value = "";
   selectUser(user.id);
@@ -569,11 +587,11 @@ function sheetTableMarkup() {
   const rows = portRows.map((slot, index) => {
     const portUsers = slot ? users.filter(item => listOrderFor(item) === slot.port) : [];
     const comment = portUsers.map(portCellComment).filter(Boolean).join(" · ");
-    const action = portUsers.map(portActionFor).find(Boolean) || "";
+    const serviceStatus = portUsers.map(serviceStatusFor).find(Boolean) || "active";
     const general = index === 0 ? generalCells : "";
     const label = slot?.label ?? "";
-    const actionColor = action === "cancelled" ? "#ff9900" : action === "splitter" ? "#38bdf8" : action === "addressChange" ? "#c084fc" : action === "notRegistered" ? "#fb7185" : "";
-    const cellStyle = `${base}text-align:left;min-width:280px;${actionColor ? `background-color:${actionColor};color:#111827;` : ""}`;
+    const statusColor = { suspended: "#fde68a", cancelled: "#fecaca", notRegistered: "#fbcfe8" }[serviceStatus] || "";
+    const cellStyle = `${base}text-align:left;min-width:280px;${statusColor ? `background-color:${statusColor};color:#111827;` : ""}`;
     return `<tr>${general}<td style="${base}text-align:center;width:28px;">${label}</td><td style="${cellStyle}">${escapeHtml(comment)}</td></tr>`;
   }).join("");
   return `<table style="border-collapse:collapse;border-spacing:0;"><tbody>${rows}</tbody></table>`;
