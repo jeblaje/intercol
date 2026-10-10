@@ -6,7 +6,7 @@
   <meta name="description" content="INTERCOL - Dashboard central para cargar secciones independientes.">
   <title>INTERCOL Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="styles.css?v=20261009-support-config-updated-at">
+  <link rel="stylesheet" href="styles.css?v=20261009-chat-standalone">
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -30,6 +30,7 @@
           <span>SECCIONES</span>
         </div>
         <div class="session-list" id="sectionList" aria-live="polite"></div>
+        <a class="nav-item chat-nav-link" id="chatNavLink" href="/chat" hidden><span class="nav-icon">◉</span><span>Chat</span></a>
         <div class="empty-sessions hidden" id="emptySections">
           <span class="empty-icon">＋</span>
           <p>No hay secciones registradas.</p>
@@ -78,7 +79,7 @@
   </div>
 
   <script src="secciones/registry.js"></script>
-  <script src="app.js?v=20261009-support-config-updated-at"></script>
+  <script src="app.js?v=20261009-chat-standalone"></script>
   <script type="module" src="admin/firebase-config.js"></script>
 </body>
 </html>

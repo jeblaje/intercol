@@ -6,6 +6,8 @@ const cancelEditButton = document.querySelector("#cancelEdit");
 const alertPermissionButton = document.querySelector("#enableAlerts");
 const dateInput = form.elements.notificationDate;
 const paymentScheduleHint = document.querySelector("#paymentScheduleHint");
+const invoiceSearch = document.querySelector("#invoiceSearch");
+const clearInvoiceSearch = document.querySelector("#clearInvoiceSearch");
 const firebase = window.parent.INTERCOL_FIREBASE;
 let records = [];
 let activeTab = "pending";
@@ -43,19 +45,37 @@ function makeRecordCard(record,status) {
 }
 function renderGroup(listId,emptyId,rows,status) { const list=document.querySelector("#"+listId); list.replaceChildren(); rows.forEach(record=>list.append(makeRecordCard(record,status))); if(emptyId)document.querySelector("#"+emptyId).hidden=rows.length>0; }
 function setCount(id,value) { document.querySelector("#"+id).textContent=String(value); }
+function searchKey(value) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase("es").trim(); }
+function matchesInvoice(record,query) {
+  if(!query) return true;
+  const values=[record.customerName,record.customerId,record.notificationDate,formatDate(record.notificationDate,{day:"numeric",month:"long",year:"numeric",hour:"numeric",minute:"2-digit"}),record.paymentDay,record.reviewedAt];
+  return values.some(value=>searchKey(value).includes(query));
+}
 function render() {
-  const today=todayKey(), now=Date.now(), pending=records.filter(record=>!record.reviewed);
-  const reviewed=records.filter(record=>record.reviewed).sort((a,b)=>(b.reviewedAt||"").localeCompare(a.reviewedAt||""));
+  const today=todayKey(), now=Date.now(), query=searchKey(invoiceSearch.value);
+  const allPending=records.filter(record=>!record.reviewed), allReviewed=records.filter(record=>record.reviewed);
+  const pending=allPending.filter(record=>matchesInvoice(record,query));
+  const reviewed=allReviewed.filter(record=>matchesInvoice(record,query)).sort((a,b)=>(b.reviewedAt||"").localeCompare(a.reviewedAt||""));
   const dueToday=pending.filter(record=>recordDay(record.notificationDate)===today).sort((a,b)=>reminderTime(a.notificationDate)-reminderTime(b.notificationDate));
   const overdue=pending.filter(record=>reminderTime(record.notificationDate)<now && recordDay(record.notificationDate)<today).sort((a,b)=>reminderTime(a.notificationDate)-reminderTime(b.notificationDate));
   const upcoming=pending.filter(record=>recordDay(record.notificationDate)>today || (recordDay(record.notificationDate)===today && reminderTime(record.notificationDate)>now)).sort((a,b)=>reminderTime(a.notificationDate)-reminderTime(b.notificationDate));
   const todayText=new Date().toLocaleDateString("es-CO",{weekday:"long",day:"numeric",month:"long"});
   document.querySelector("#todayDate").textContent=todayText; document.querySelector("#todayLabel").textContent="Verificaciones del "+todayText+".";
-  [["todayCount",dueToday.length],["upcomingCount",upcoming.length],["reviewedCount",reviewed.length],["pendingTabCount",pending.length],["reviewedTabCount",reviewed.length],["todayGroupCount",dueToday.length],["overdueGroupCount",overdue.length],["upcomingGroupCount",upcoming.length],["reviewedGroupCount",reviewed.length]].forEach(([id,value])=>setCount(id,value));
-  const alert=document.querySelector("#todayAlert"), dueCount=dueToday.length+overdue.length; alert.hidden=dueCount===0;
-  if(dueCount){document.querySelector("#alertTitle").textContent=dueToday.length?dueToday.length+" factura"+(dueToday.length===1?"":"s")+" para verificar hoy":"Tienes verificaciones pendientes";document.querySelector("#alertText").textContent=overdue.length?overdue.length+" pendiente"+(overdue.length===1?"":"s")+" de fechas anteriores.":"Revisa si se generó cada factura y márcala como verificada.";}
+  [["todayCount",allPending.filter(record=>recordDay(record.notificationDate)===today).length],["upcomingCount",allPending.filter(record=>recordDay(record.notificationDate)>today || (recordDay(record.notificationDate)===today && reminderTime(record.notificationDate)>now)).length],["reviewedCount",allReviewed.length],["pendingTabCount",pending.length],["reviewedTabCount",reviewed.length],["todayGroupCount",dueToday.length],["overdueGroupCount",overdue.length],["upcomingGroupCount",upcoming.length],["reviewedGroupCount",reviewed.length]].forEach(([id,value])=>setCount(id,value));
+  clearInvoiceSearch.hidden=!invoiceSearch.value;
+  document.querySelector("#invoiceSearchStatus").textContent=query?`${pending.length} pendiente${pending.length===1?"":"s"} y ${reviewed.length} verificada${reviewed.length===1?"":"s"} encontrada${pending.length+reviewed.length===1?"":"s"}.`:"Busca en las facturas pendientes y verificadas.";
+  const alertDueToday=allPending.filter(record=>recordDay(record.notificationDate)===today), alertOverdue=allPending.filter(record=>reminderTime(record.notificationDate)<now&&recordDay(record.notificationDate)<today);
+  const alert=document.querySelector("#todayAlert"), dueCount=alertDueToday.length+alertOverdue.length; alert.hidden=dueCount===0;
+  if(dueCount){document.querySelector("#alertTitle").textContent=alertDueToday.length?alertDueToday.length+" factura"+(alertDueToday.length===1?"":"s")+" para verificar hoy":"Tienes verificaciones pendientes";document.querySelector("#alertText").textContent=alertOverdue.length?alertOverdue.length+" pendiente"+(alertOverdue.length===1?"":"s")+" de fechas anteriores.":"Revisa si se generó cada factura y márcala como verificada.";}
   document.querySelector("#overdueGroup").hidden=overdue.length===0;
   renderGroup("todayList","todayEmpty",dueToday,"today"); renderGroup("overdueList",null,overdue,"overdue"); renderGroup("upcomingList","upcomingEmpty",upcoming,"upcoming"); renderGroup("reviewedList","reviewedEmpty",reviewed,"reviewed");
+  const noPendingMatch=Boolean(query)&&pending.length===0, noReviewedMatch=Boolean(query)&&reviewed.length===0;
+  document.querySelector("#pendingSearchEmpty").hidden=!noPendingMatch;
+  document.querySelector("#reviewedSearchEmpty").hidden=!noReviewedMatch;
+  document.querySelector("#todayList").parentElement.hidden=Boolean(query)&&dueToday.length===0;
+  document.querySelector("#overdueGroup").hidden=overdue.length===0||(Boolean(query)&&pending.length===0);
+  document.querySelector("#upcomingList").parentElement.hidden=Boolean(query)&&upcoming.length===0;
+  document.querySelector("#reviewedGroup").hidden=noReviewedMatch;
   document.querySelector("#pendingPanel").hidden=activeTab!=="pending"; document.querySelector("#reviewedPanel").hidden=activeTab!=="reviewed";
   document.querySelectorAll("[data-tab]").forEach(button=>{const active=button.dataset.tab===activeTab;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active));});
   window.parent.postMessage({type:"INTERCOL_SECTION_RESIZE",height:document.documentElement.scrollHeight},"*");
@@ -96,6 +116,8 @@ form.addEventListener("submit",async event=>{
 cancelEditButton.addEventListener("click",()=>{resetForm();formStatus.textContent="";});
 alertPermissionButton.addEventListener("click",askForAlerts);
 document.querySelectorAll("[data-tab]").forEach(button=>button.addEventListener("click",()=>{activeTab=button.dataset.tab;render();}));
+invoiceSearch.addEventListener("input",render);
+clearInvoiceSearch.addEventListener("click",()=>{invoiceSearch.value="";invoiceSearch.focus();render();});
 window.addEventListener("message",event=>{
   if(event.data?.type==="INTERCOL_OPEN_INVOICE"){pendingOpenInvoiceId=String(event.data.id||"");scrollToPendingInvoice();}
   if(event.data?.type==="INTERCOL_PREFILL_INVOICE"){form.elements.customerName.value=String(event.data.customerName||"");form.elements.customerId.value=String(event.data.customerId||"");dateInput.value=String(event.data.notificationDate||"");setPaymentSchedule(event.data.paymentDay,event.data.paymentDate);form.elements.recordId.value="";saveButton.textContent="Agregar verificación";cancelEditButton.hidden=true;document.querySelector("#formTitle").textContent="Nueva factura por verificar";formStatus.textContent="Datos precargados desde Reconexión. Aún no se han guardado.";window.scrollTo({top:0,behavior:"smooth"});}

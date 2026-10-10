@@ -13,6 +13,8 @@ const state = {
   currentUser: null,
   advisorProfile: null,
   workspaceRole: "",
+  adminPanelAccess: false,
+  chatAccess: false,
   sectionPermissions: null,
   systemAdmin: false,
   pendingSectionId: null,
@@ -95,7 +97,7 @@ function renderSidebar() {
   const showPersonalGroup = Boolean(state.currentUser && state.advisorProfile && personalSections.length);
   if (personalGroup) personalGroup.hidden = !showPersonalGroup;
   if (protectedHeading) protectedHeading.hidden = protectedSections.length === 0 && !showPersonalGroup;
-  empty.classList.toggle("hidden", publicSections.length > 0);
+  empty.classList.toggle("hidden", publicSections.length > 0 || state.chatAccess);
   const appendSection = (section, list, index) => {
     const item = document.createElement("button");
     const active = state.activeView === "section" && state.activeSectionId === section.id;
@@ -117,14 +119,16 @@ function renderSidebar() {
     personalList.prepend(item);
   });
   const account = $("#accountArea");
+  const chatLink = $("#chatNavLink");
+  if (chatLink) chatLink.hidden = !state.chatAccess;
   const workspaceRole = $("#workspaceRole");
   if (workspaceRole) workspaceRole.textContent = state.currentUser ? (state.workspaceRole || "Asesor") : "INTERCOL";
   if (workspaceRole) {
-    const isAdministratorRole = state.systemAdmin || String(state.advisorProfile?.rol || "").toLowerCase() === "administrador";
-    workspaceRole.classList.toggle("is-admin", isAdministratorRole);
-    workspaceRole.setAttribute("aria-disabled", String(!isAdministratorRole));
-    workspaceRole.tabIndex = isAdministratorRole ? 0 : -1;
-    if (isAdministratorRole) workspaceRole.href = "admin/";
+    const canOpenAdminPanel = state.adminPanelAccess;
+    workspaceRole.classList.toggle("is-admin", canOpenAdminPanel);
+    workspaceRole.setAttribute("aria-disabled", String(!canOpenAdminPanel));
+    workspaceRole.tabIndex = canOpenAdminPanel ? 0 : -1;
+    if (canOpenAdminPanel) workspaceRole.href = "admin/";
     else workspaceRole.removeAttribute("href");
   }
   if (account) {
@@ -668,20 +672,27 @@ async function handleAdvisorAuth(user) {
   state.advisorProfile = null;
   state.sectionPermissions = null;
   state.workspaceRole = "";
+  state.adminPanelAccess = false;
+  state.chatAccess = false;
   state.systemAdmin = isSystemAdminAccount(user);
   if (user) {
     try { state.advisorProfile = await firebase.getAdvisorProfile(user.uid); }
     catch (error) { console.error("No se pudo cargar el perfil del asesor:", error); }
     if (state.systemAdmin) {
       state.workspaceRole = "Administrador";
+      state.adminPanelAccess = true;
+      state.chatAccess = true;
     } else {
       try {
         const role = await firebase.getAdvisorRolePermissions(state.advisorProfile?.rol || "asesor");
         state.sectionPermissions = role?.permisos || {};
         state.workspaceRole = role?.nombre || state.advisorProfile?.rol || "Asesor";
-        state.systemAdmin = String(state.advisorProfile?.rol || "").toLowerCase() === "administrador"
-          || String(role?.nombre || "").trim().toLowerCase() === "administrador";
-        if (state.systemAdmin) state.workspaceRole = "Administrador";
+        const chatPermission = role?.permisos?.chat?.acceder;
+        state.chatAccess = chatPermission === true || (state.advisorProfile?.rol === "asesor" && typeof chatPermission !== "boolean");
+        const panel = state.advisorProfile?.rol === "administrador"
+          ? { acceder: true, dashboard: true, asesores: true, secciones: true, rolesPermisos: true }
+          : role?.permisos?.panelAdmin || {};
+        state.adminPanelAccess = panel.acceder === true && ["dashboard", "asesores", "secciones", "rolesPermisos"].some(key => panel[key] === true);
       } catch (error) { console.error("No se pudieron cargar los permisos del rol del asesor:", error); state.sectionPermissions = {}; }
     }
   }

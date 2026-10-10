@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Chat personal entre asesores de INTERCOL.">
+  <title>Chat · INTERCOL</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+  <script>try{const theme=localStorage.getItem("intercol_theme_v2");if(theme==="light"||theme==="dark")document.documentElement.dataset.theme=theme}catch{}</script>
+  <link rel="stylesheet" href="styles.css?v=20261009-chat-personal-first">
+</head>
+<body>
+  <main class="access-gate" id="chatAccessGate"><span class="gate-mark">I</span><span class="gate-kicker">INTERCOL · CHAT</span><h1>Verificando acceso…</h1><p>Comprobando los permisos de tu cuenta.</p></main>
+  <main class="chat-shell" id="chatShell" hidden>
+    <aside class="chat-sidebar">
+      <header class="sidebar-header">
+        <a class="brand" href="../" aria-label="Volver a INTERCOL">
+          <span class="brand-mark">I</span>
+          <span><strong>INTERCOL</strong><small>CHAT DE ASESORES</small></span>
+        </a>
+        <button class="icon-button" type="button" aria-label="Nuevo chat">＋</button>
+      </header>
+
+      <div class="sidebar-title-row"><h1>Chats personales</h1><span class="inbox-count">3</span></div>
+      <label class="search-box"><span aria-hidden="true">⌕</span><input type="search" placeholder="Buscar asesores"></label>
+
+      <div class="conversation-tabs" aria-label="Filtrar conversaciones">
+        <button class="tab active" type="button">Personales <span>3</span></button>
+        <button class="tab" type="button">Grupos</button>
+      </div>
+
+      <section class="conversation-list" aria-label="Conversaciones personales con asesores">
+        <button class="conversation active" type="button">
+          <span class="avatar avatar-orange">LG<span class="online-dot"></span></span>
+          <span class="conversation-copy"><span class="conversation-top"><strong>Laura Gómez</strong><time>10:42 a. m.</time></span><span class="conversation-preview">Excelente, gracias Laura.</span><span class="conversation-tags"><i>Asesora</i><b>2</b></span></span>
+        </button>
+        <button class="conversation" type="button">
+          <span class="avatar avatar-blue">AP<span class="online-dot"></span></span>
+          <span class="conversation-copy"><span class="conversation-top"><strong>Andrés Pérez</strong><time>9:18 a. m.</time></span><span class="conversation-preview">Recibido, gracias.</span><span class="conversation-tags"><i>Asesor</i></span></span>
+        </button>
+        <button class="conversation" type="button">
+          <span class="avatar avatar-green">CM</span>
+          <span class="conversation-copy"><span class="conversation-top"><strong>Carlos Mendoza</strong><time>Ayer</time></span><span class="conversation-preview">Perfecto, quedó coordinado.</span><span class="conversation-tags"><i>Asesor</i></span></span>
+        </button>
+        <div class="conversation-group-label"><span>GRUPOS</span><span>1</span></div>
+        <button class="conversation group-conversation" type="button">
+          <span class="avatar avatar-purple">OT</span>
+          <span class="conversation-copy"><span class="conversation-top"><strong>Operaciones · mañana</strong><time>8:06 a. m.</time></span><span class="conversation-preview">Andrés: Iniciamos la ruta.</span><span class="conversation-tags"><i>Grupo · 8</i></span></span>
+        </button>
+      </section>
+
+      <footer class="sidebar-footer">
+        <div class="avatar avatar-me">YO</div>
+        <span class="profile-copy"><strong>Tu cuenta</strong><small>Asesor</small></span>
+        <button class="icon-button profile-menu" type="button" aria-label="Opciones de perfil">···</button>
+      </footer>
+    </aside>
+
+    <section class="chat-main" aria-label="Conversación personal con Laura Gómez">
+      <header class="conversation-header">
+        <span class="avatar avatar-orange header-avatar">LG<span class="online-dot"></span></span>
+        <span class="header-copy"><strong>Laura Gómez</strong><small><span class="status-led"></span> Asesora · En línea</small></span>
+        <span class="header-spacer"></span>
+        <button class="icon-button" type="button" aria-label="Buscar en la conversación">⌕</button>
+        <button class="icon-button" type="button" aria-label="Detalles de la conversación">ⓘ</button>
+      </header>
+
+      <div class="chat-content">
+        <div class="conversation-intro personal-intro">
+          <span class="avatar avatar-orange contact-avatar">LG<span class="online-dot"></span></span>
+          <strong>Laura Gómez</strong>
+          <p>Conversación personal · Asesora</p>
+          <span class="member-pill"><span class="status-led"></span> &nbsp;En línea</span>
+        </div>
+
+        <div class="date-divider"><span>HOY · 9 DE OCTUBRE</span></div>
+
+        <article class="message message-incoming">
+          <span class="avatar avatar-blue message-avatar">AP</span>
+          <div class="message-body"><span class="message-author">Laura Gómez <time>9:34 a. m.</time></span><div class="bubble">Buenos días. ¿Me ayudas a confirmar el estado de la caja 204?</div></div>
+        </article>
+        <article class="message message-outgoing">
+          <div class="message-body"><span class="message-author">Tú <time>9:37 a. m.</time></span><div class="bubble">Claro. Ya estoy revisando la información del servicio.</div><span class="message-read">✓✓</span></div>
+        </article>
+        <article class="message message-incoming">
+          <span class="avatar avatar-orange message-avatar">LG</span>
+          <div class="message-body"><span class="message-author">Laura Gómez <time>10:41 a. m.</time></span><div class="bubble">El cliente ya quedó informado. También actualicé la observación del puerto.</div><div class="attachment-card"><span class="attachment-icon">▤</span><span><strong>Detalle de la caja 204</strong><small>Referencia compartida · hoy</small></span><span class="attachment-arrow">↗</span></div></div>
+        </article>
+        <article class="message message-outgoing last-message">
+          <div class="message-body"><span class="message-author">Tú <time>10:42 a. m.</time></span><div class="bubble">Excelente, gracias Laura.</div><span class="message-read">✓✓</span></div>
+        </article>
+      </div>
+
+      <footer class="composer-wrap">
+        <div class="composer-tools"><button class="tool-button" type="button" aria-label="Adjuntar archivo">＋</button><button class="tool-button" type="button" aria-label="Formato de texto">Aa</button></div>
+        <div class="composer"><span class="composer-placeholder">Escribe un mensaje…</span><button class="emoji-button" type="button" aria-label="Emojis">☺</button></div>
+        <button class="send-button" type="button" aria-label="Enviar mensaje">➤</button>
+        <small>Solo diseño · el envío de mensajes aún no está conectado</small>
+      </footer>
+    </section>
+
+    <aside class="details-panel">
+      <div class="details-heading"><span>PERFIL DEL ASESOR</span><button class="icon-button" type="button" aria-label="Cerrar detalles">×</button></div>
+      <div class="group-profile"><span class="avatar avatar-orange group-avatar">LG<span class="online-dot"></span></span><h2>Laura Gómez</h2><p>Asesora · Valledupar</p><button class="outline-button" type="button">Ver perfil</button></div>
+      <section class="detail-section"><h3>INFORMACIÓN</h3><div class="contact-info-row"><span>Estado</span><strong><i class="status-online"></i> En línea</strong></div><div class="contact-info-row"><span>Área</span><strong>Asesoría</strong></div><div class="contact-info-row"><span>Chat</span><strong>Personal</strong></div></section>
+      <section class="detail-section shared-files"><h3>ARCHIVOS COMPARTIDOS</h3><div class="file-row"><span class="file-icon pdf">PDF</span><span><strong>Detalle de la caja 204</strong><small>Hoy · Laura Gómez</small></span></div><div class="file-row"><span class="file-icon sheet">XLS</span><span><strong>Plan de trabajo</strong><small>Ayer · Laura Gómez</small></span></div><button class="text-button" type="button">Ver archivos →</button></section>
+      <a class="back-link" href="../">← Volver a INTERCOL</a>
+    </aside>
+  </main>
+  <script type="module" src="../admin/firebase-config.js?v=20261009-chat-personal-first"></script>
+  <script src="script.js?v=20261009-chat-personal-first"></script>
+</body>
+</html>

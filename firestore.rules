@@ -2,23 +2,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function roleIsAdministrator(roleId) {
-      let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
-      return roleId is string
-        && (roleId == 'administrador'
-          || (exists(rolePath) && get(rolePath).data.get('nombre', '') == 'Administrador'));
-    }
-    function hasAdministratorRole() {
-      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
-      return signedIn() && exists(advisorPath)
-        && roleIsAdministrator(get(advisorPath).data.get('rol', ''));
-    }
     function isSystemAdmin() {
       return signedIn() && (
         request.auth.uid == 'INJQ1NtkRwRbxfLN2XCwF22flyu2'
         || request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com'
-        || hasAdministratorRole()
       );
+    }
+    function hasAdminPanelPermission(sectionId) {
+      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
+      let roleId = exists(advisorPath) ? get(advisorPath).data.get('rol', 'asesor') : 'asesor';
+      let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
+      return signedIn() && exists(advisorPath)
+        && roleId is string && exists(rolePath)
+        && (roleId == 'administrador'
+          || (get(rolePath).data.get('permisos', {}) is map
+            && get(rolePath).data.permisos.get('panelAdmin', {}) is map
+            && get(rolePath).data.permisos.panelAdmin.get('acceder', false) == true
+            && get(rolePath).data.permisos.panelAdmin.get(sectionId, false) == true));
     }
     function sectionUsesRoles(sectionId) {
       return !(sectionId in ['mensajes-temporales', 'utilidades', 'cajas-verificadas', 'reporte-servicio']);
@@ -77,11 +77,17 @@ service cloud.firestore {
         && request.resource.data.uid == advisorUid
         && request.resource.data.rol == 'asesor'
         && request.resource.data.keys().hasOnly(['uid', 'asesor', 'usuario', 'rol', 'email', 'correoRecuperacion', 'creadoEn']);
-      allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid) || hasSectionPermission('roles-permisos', 'ver');
+      allow read: if isSystemAdmin() || (signedIn() && request.auth.uid == advisorUid) || hasSectionPermission('roles-permisos', 'ver') || hasAdminPanelPermission('asesores');
       allow update: if (isSystemAdmin()
         && request.resource.data.rol is string
         && exists(/databases/$(database)/documents/rolesAsesores/$(request.resource.data.rol))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rol', 'rolActualizadoPor', 'rolActualizadoEn']))
+        || (signedIn() && hasAdminPanelPermission('asesores')
+          && hasSectionPermission('roles-permisos', 'editar')
+          && request.resource.data.rol is string
+          && exists(/databases/$(database)/documents/rolesAsesores/$(request.resource.data.rol))
+          && request.resource.data.rolActualizadoPor == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rol', 'rolActualizadoPor', 'rolActualizadoEn']))
         || (signedIn() && request.auth.uid == advisorUid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'correoRecuperacion'])
           && request.resource.data.email is string
@@ -114,7 +120,8 @@ service cloud.firestore {
         && request.resource.data.nombre is string
         && request.resource.data.permisos is map
         && request.resource.data.keys().hasOnly(['nombre', 'permisos', 'creadoPor', 'actualizadoPor', 'actualizadoEn']);
-      allow update: if (roleId != 'administrador' || isSystemAdmin())
+      allow update: if (roleId != 'administrador' || isSystemAdmin()
+          || (hasAdminPanelPermission('rolesPermisos') && hasSectionPermission('roles-permisos', 'editar')))
         && hasSectionPermission('roles-permisos', 'editar')
         && request.resource.data.nombre is string
         && request.resource.data.permisos is map
