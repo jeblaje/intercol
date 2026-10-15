@@ -65,9 +65,17 @@ window.INTERCOL_SECTIONS = [
   {
     id: "cajas-verificadas",
     name: "Cajas verificadas",
-    description: "Busca cajas y consulta sus fichas compartidas.",
+    description: "Consulta las cajas compartidas con tu cuenta registrada.",
     icon: "▤",
-    path: "secciones/cajas-verificadas/index.html"
+    path: "secciones/cajas-verificadas/index.html",
+    requiresAuth: true
+  },
+  {
+    id: "clientes",
+    name: "Clientes",
+    description: "Consulta fichas de clientes e inicia el seguimiento de sus procesos.",
+    icon: "♙",
+    path: "secciones/clientes/index.html"
   },
   {
     id: "reporte-servicio",

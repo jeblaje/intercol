@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clientes · INTERCOL</title>
+  <link rel="stylesheet" href="style.css?v=20261015-process-step-navigation">
+</head>
+<body>
+  <main class="clients-page">
+    <div class="clients-status-row"><span class="sync-indicator" id="syncStatus" role="status">Conectando…</span></div>
+    <section class="notifications panel" aria-labelledby="notificationsTitle">
+      <div class="section-header"><div><span class="eyebrow">AVISOS</span><h2 id="notificationsTitle">Procesos sin terminar</h2></div><span class="count-pill" id="openProcessCount">0 abiertos</span></div>
+      <div class="notification-filters"><label for="noticeTypeFilter">Proceso</label><select id="noticeTypeFilter"><option value="all">Todos</option><option value="reconexion">Reconexión</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select></div>
+      <div id="notificationList" class="notification-list"><p class="empty-state">Cargando procesos…</p></div>
+    </section>
+    <div class="clients-layout">
+      <section class="panel client-list-panel">
+        <div class="section-header"><div><span class="eyebrow">FICHAS</span><h2>Buscar cliente</h2></div><span class="count-pill" id="clientCount">0</span></div>
+        <label class="search-label" for="clientSearch">Nombre o cédula</label>
+        <input id="clientSearch" class="search-input" type="search" autocomplete="off" placeholder="Escribe nombre o cédula">
+        <div id="clientList" class="client-list"><p class="empty-state">Cargando clientes…</p></div>
+      </section>
+      <section class="panel client-card-panel" id="clientCardPanel">
+        <div class="client-placeholder"><span class="placeholder-icon">♙</span><h2>Ficha del cliente</h2><p>Selecciona un cliente para consultar sus procesos.</p></div>
+      </section>
+    </div>
+  </main>
+  <script src="script.js?v=20261015-process-step-navigation"></script>
+</body>
+</html>

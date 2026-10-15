@@ -10,6 +10,8 @@ const state = {
   temporaryMessagesError: "",
   supportConfig: { soporte: { arriba: [], abajo: [], sanJuan: [], riohacha: [] }, ventas: { valledupar: [], pueblos: [] } },
   supportConfigError: "",
+  adjustmentZones: [{ nombre: "Zona general", valor: 15000 }, { nombre: "Zona especial", valor: 20000 }],
+  adjustmentZonesError: "",
   currentUser: null,
   advisorProfile: null,
   workspaceRole: "",
@@ -21,6 +23,8 @@ const state = {
   pendingInvoiceId: null,
   pendingInvoiceDraft: null,
   pendingVerifiedBoxEditId: null,
+  pendingClientId: null,
+  pendingClientProcessType: "",
   invoiceNotifications: [],
   invoiceToastStartedAt: new Map(),
   theme: loadTheme()
@@ -173,6 +177,8 @@ function toggleSidebar() {
 function setView(view) {
   state.activeView = view;
   state.activeSectionId = null;
+  $("#pageDescription").hidden = true;
+  $("#topbarBackToSections").hidden = true;
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
 
   if (view === "dashboard") {
@@ -211,6 +217,96 @@ function renderDashboard() {
   $("#manageTemporaryMessages").addEventListener("click", () => openSection("mensajes-temporales"));
   renderDashboardTeams();
   renderDashboardMessages();
+}
+
+function closeClientProcessDialog() { document.querySelector("#clientProcessDialog")?.remove(); }
+function openClientProcessDialog(client = null) {
+  if (!state.currentUser || !state.advisorProfile) { state.pendingSectionId = "clientes"; openSection("acceso"); return; }
+  closeClientProcessDialog();
+  const dialog = document.createElement("dialog");
+  dialog.id = "clientProcessDialog";
+  dialog.className = "client-process-dialog";
+  dialog.innerHTML = `<div class="client-process-dialog-card"><header><div><span class="eyebrow">NUEVO PROCESO</span><h2>Buscar cliente</h2><p>Con la cédula abrimos su ficha o creamos una nueva.</p></div><button class="dialog-close" type="button" aria-label="Cerrar">×</button></header><form id="clientLookupForm"><label for="clientLookupId">Cédula</label><div class="client-lookup-row"><input id="clientLookupId" inputmode="numeric" autocomplete="off" placeholder="Escribe la cédula" required><button class="secondary-button" type="submit">Buscar</button></div></form><p id="clientLookupStatus" class="inline-status" role="status" aria-live="polite"></p><section id="clientLookupResult" class="client-lookup-result" hidden></section><section id="clientCreateForm" class="client-create-form" hidden><label for="newClientName">Nombre del cliente</label><input id="newClientName" autocomplete="name" placeholder="Nombre completo" required><button class="primary-button" id="createClientAndContinue" type="button">Crear cliente y continuar</button></section><section id="processTypePicker" class="process-type-picker" hidden><h3 id="processTypeHeading">Selecciona el proceso</h3><div class="process-type-options"><button type="button" data-process-type="reconexion">Reconexión</button><button type="button" data-process-type="cambio-fecha-pago">Cambio de fecha de pago</button><button type="button" data-process-type="cambio-plan">Cambio de plan</button></div><p id="processStartStatus" class="inline-status" role="status" aria-live="polite"></p></section></div>`;
+  document.body.append(dialog);
+  const lookupForm = dialog.querySelector("#clientLookupForm");
+  const status = dialog.querySelector("#clientLookupStatus");
+  const result = dialog.querySelector("#clientLookupResult");
+  const createForm = dialog.querySelector("#clientCreateForm");
+  const picker = dialog.querySelector("#processTypePicker");
+  let selectedClient = client;
+  const startProcess = async type => {
+    if (!selectedClient) return;
+    const processStatus = dialog.querySelector("#processStartStatus");
+    processStatus.textContent = "Guardando proceso…";
+    dialog.querySelectorAll("[data-process-type]").forEach(button => { button.disabled = true; });
+    try {
+      const firebase = window.INTERCOL_FIREBASE;
+      await firebase.createClientProcess({ client: selectedClient, type, user: { uid: state.currentUser.uid, nombre: state.advisorProfile.asesor || state.advisorProfile.usuario || state.currentUser.displayName || "Asesor" } });
+      state.pendingClientId = selectedClient.id;
+      state.pendingClientProcessType = type;
+      closeClientProcessDialog();
+      openSection("clientes");
+    } catch (error) {
+      processStatus.textContent = error?.code === "permission-denied" ? "No tienes permiso para iniciar procesos de clientes." : `No se pudo iniciar el proceso: ${error?.message || "Revisa la conexión."}`;
+      dialog.querySelectorAll("[data-process-type]").forEach(button => { button.disabled = false; });
+    }
+  };
+  const showClient = match => {
+    selectedClient = match;
+    result.hidden = false;
+    createForm.hidden = true;
+    picker.hidden = true;
+    result.innerHTML = `<div class="client-match"><span class="client-match-check">✓</span><div><strong>${escapeHtml(match.nombre)}</strong><span>Cédula: ${escapeHtml(match.cedula)}</span></div></div><button id="continueClientProcess" class="primary-button" type="button">Iniciar proceso para este cliente</button>`;
+    result.querySelector("#continueClientProcess").addEventListener("click", () => { result.hidden = true; picker.hidden = false; dialog.querySelector("#processTypeHeading").textContent = `Proceso para ${match.nombre}`; });
+    status.textContent = "Cliente encontrado.";
+  };
+  dialog.querySelector(".dialog-close").addEventListener("click", closeClientProcessDialog);
+  lookupForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const cedula = dialog.querySelector("#clientLookupId").value.trim();
+    if (!cedula) return;
+    status.textContent = "Buscando cliente…";
+    result.hidden = true; createForm.hidden = true; picker.hidden = true;
+    try {
+      const match = await window.INTERCOL_FIREBASE.findClientByCedula(cedula);
+      if (match) showClient(match);
+      else {
+        selectedClient = null;
+        createForm.hidden = false;
+        status.textContent = "No encontramos un cliente con esa cédula. Créalo con su nombre y cédula para continuar.";
+        dialog.querySelector("#newClientName").focus();
+      }
+    } catch (error) {
+      status.textContent = error?.code === "permission-denied" ? "Firebase todavía no autoriza Clientes. Publica en intercol-784d9 las reglas actuales de firestore.rules." : "No se pudo buscar. Revisa tu conexión e inténtalo otra vez.";
+    }
+  });
+  dialog.querySelector("#createClientAndContinue").addEventListener("click", async event => {
+    const button = event.currentTarget;
+    const nombre = dialog.querySelector("#newClientName").value.trim();
+    const cedula = dialog.querySelector("#clientLookupId").value.trim();
+    if (!nombre || !cedula) { status.textContent = "Escribe el nombre y la cédula para crear el cliente."; return; }
+    button.disabled = true; status.textContent = "Creando cliente…";
+    try {
+      const firebase = window.INTERCOL_FIREBASE;
+      const existing = await firebase.findClientByCedula(cedula);
+      if (existing) { showClient(existing); return; }
+      const reference = await firebase.createClient({ nombre, cedula, user: { uid: state.currentUser.uid, nombre: state.advisorProfile.asesor || state.advisorProfile.usuario || state.currentUser.displayName || "Asesor" } });
+      selectedClient = { id: reference.id, nombre, cedula };
+      createForm.hidden = true; result.hidden = false;
+      result.innerHTML = `<div class="client-match"><span class="client-match-check">✓</span><div><strong>${escapeHtml(nombre)}</strong><span>Cédula: ${escapeHtml(cedula)} · Cliente creado</span></div></div>`;
+      picker.hidden = false; dialog.querySelector("#processTypeHeading").textContent = `Iniciar proceso para ${nombre}`; status.textContent = "Cliente creado. Elige el proceso para continuar.";
+    } catch (error) {
+      status.textContent = error?.code === "permission-denied" ? "Firebase todavía no autoriza crear clientes. Publica en intercol-784d9 las reglas actuales de firestore.rules." : `No se pudo crear el cliente: ${error?.message || "Revisa la conexión."}`;
+    } finally { button.disabled = false; }
+  });
+  dialog.querySelectorAll("[data-process-type]").forEach(button => button.addEventListener("click", () => startProcess(button.dataset.processType)));
+  if (client) {
+    dialog.querySelector("#clientLookupId").value = client.cedula;
+    showClient(client);
+  }
+  dialog.addEventListener("click", event => { if (event.target === dialog) closeClientProcessDialog(); });
+  dialog.showModal();
+  if (!client) dialog.querySelector("#clientLookupId").focus();
 }
 
 function renderSupportConfigUpdatedAt() {
@@ -366,13 +462,49 @@ function renderSettings() {
         <div class="support-config-actions"><p id="supportConfigStatus" role="status" aria-live="polite"></p><button class="primary-button" id="saveSupportConfig" type="submit">Guardar configuración</button></div>
       </form>
     </section>
+    ${state.currentUser && (state.systemAdmin || state.advisorProfile?.rol === "administrador") ? `<section class="panel settings-team-panel"><div class="panel-header"><div><h3>Zonas y reajustes</h3><span>Configura el valor que se debe cobrar por zona. Escribe una zona por línea con el formato: nombre | valor.</span></div></div><form class="panel-body" id="adjustmentZonesForm"><label class="account-security-form">Zonas de reajuste<textarea id="adjustmentZonesInput" rows="8" placeholder="Centro | 15000&#10;Zona especial | 20000"></textarea></label><small id="adjustmentZonesStatus" class="inline-status" role="status">${escapeHtml(state.adjustmentZonesError)}</small><div class="support-config-actions"><p></p><button class="primary-button" id="saveAdjustmentZones" type="submit">Guardar zonas</button></div></form></section>` : ""}
   `;
   populateSupportConfigForm();
   $("#supportConfigForm").addEventListener("input", event => { event.currentTarget.dataset.dirty = "true"; });
   $("#supportConfigForm").addEventListener("submit", saveSupportConfig);
+  const zonesForm = $("#adjustmentZonesForm");
+  if (zonesForm) {
+    populateAdjustmentZonesForm();
+    zonesForm.addEventListener("input", () => { zonesForm.dataset.dirty = "true"; });
+    zonesForm.addEventListener("submit", saveAdjustmentZones);
+  }
   $("#settingsTheme").addEventListener("click", toggleTheme);
   $("#recoveryEmailForm")?.addEventListener("submit", saveRecoveryEmail);
   $("#changePasswordForm")?.addEventListener("submit", changeAccountPassword);
+}
+
+function populateAdjustmentZonesForm() {
+  const form = $("#adjustmentZonesForm");
+  const field = $("#adjustmentZonesInput");
+  if (!form || !field || form.dataset.dirty === "true") return;
+  field.value = state.adjustmentZones.map(zone => `${zone.nombre} | ${zone.valor}`).join("\n");
+}
+
+async function saveAdjustmentZones(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $("#saveAdjustmentZones");
+  const status = $("#adjustmentZonesStatus");
+  const zones = $("#adjustmentZonesInput").value.split(/\r?\n/).map(line => {
+    const [nombre, rawValue] = line.split("|");
+    return { nombre: String(nombre || "").trim(), valor: Number(String(rawValue || "").replace(/[^0-9]/g, "")) };
+  }).filter(zone => zone.nombre && [15000, 20000].includes(zone.valor));
+  if (!zones.length) { status.textContent = "Agrega al menos una zona con valor 15000 o 20000."; return; }
+  if (zones.length !== $("#adjustmentZonesInput").value.split(/\r?\n/).filter(line => line.trim()).length) { status.textContent = "Cada línea debe tener el formato Nombre de zona | 15000 o 20000."; return; }
+  button.disabled = true; button.textContent = "Guardando…"; status.textContent = "Guardando catálogo de zonas…";
+  try {
+    await window.INTERCOL_FIREBASE.saveAdjustmentZones(zones);
+    state.adjustmentZones = zones; form.dataset.dirty = "false";
+    status.textContent = "Zonas guardadas. El reajuste se calculará automáticamente en los procesos.";
+  } catch (error) {
+    console.error("No se pudieron guardar las zonas de reajuste:", error);
+    status.textContent = error?.code === "permission-denied" ? "Firebase rechazó el cambio. Publica las reglas actualizadas de zonasReajuste." : `No se pudieron guardar las zonas (${error?.code || "error"}).`;
+  } finally { button.disabled = false; button.textContent = "Guardar zonas"; }
 }
 
 async function saveRecoveryEmail(event) {
@@ -428,9 +560,11 @@ async function saveSupportConfig(event) {
 }
 
 function openSection(id) {
+  $("#pageDescription").hidden = true;
+  $("#topbarBackToSections").hidden = true;
   let section = state.sections.find((item) => item.id === id);
   if (!section) return;
-  if (section.requiresAuth && (!state.currentUser || !state.advisorProfile)) {
+  if ((section.requiresAuth || section.id === "clientes") && (!state.currentUser || !state.advisorProfile)) {
     state.pendingSectionId = id;
     section = state.sections.find(item => item.id === "acceso");
     if (!section) { setView("dashboard"); return; }
@@ -454,14 +588,13 @@ function openSection(id) {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.remove("active"));
   $("#pageEyebrow").textContent = "SECCIÓN";
   $("#pageTitle").textContent = section.name;
+  $("#pageDescription").textContent = section.description || "Sección INTERCOL";
+  $("#pageDescription").hidden = false;
+  $("#topbarBackToSections").hidden = false;
   content.innerHTML = `
-    <div class="section-toolbar">
-      <div><span class="eyebrow">MÓDULO INDEPENDIENTE</span><p>${escapeHtml(section.description || "Sección INTERCOL")}</p></div>
-      <button class="secondary-button" id="backToSections">← Secciones</button>
-    </div>
     <div class="section-frame-wrap"><iframe id="sectionFrame" title="${escapeHtml(section.name)}" src="${escapeAttribute(section.path)}" allow="clipboard-write"></iframe></div>
   `;
-  $("#backToSections").addEventListener("click", () => setView("sections"));
+  $("#topbarBackToSections").onclick = () => setView("sections");
   const frame = $("#sectionFrame");
   frame.addEventListener("load", () => {
     broadcastTheme();
@@ -478,11 +611,19 @@ function openSection(id) {
       frame.contentWindow.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: state.pendingVerifiedBoxEditId }, "*");
       state.pendingVerifiedBoxEditId = null;
     }
+    sendPendingClientProcess(frame);
     frame.contentWindow.scrollTo(0, 0);
   });
   window.scrollTo(0, 0);
   renderSidebar();
   if (window.innerWidth <= 980) closeSidebar();
+}
+
+function sendPendingClientProcess(frame = $("#sectionFrame")) {
+  if (state.activeSectionId !== "clientes" || !state.pendingClientId || !frame?.contentWindow) return;
+  frame.contentWindow.postMessage({ type: "INTERCOL_OPEN_CLIENT", id: state.pendingClientId, processType: state.pendingClientProcessType }, "*");
+  state.pendingClientId = null;
+  state.pendingClientProcessType = "";
 }
 
 function toggleTheme() {
@@ -533,6 +674,10 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (event.source !== frame?.contentWindow) return;
+  if (event.data?.type === "INTERCOL_START_CLIENT_PROCESS") {
+    openClientProcessDialog(event.data.client || null);
+    return;
+  }
   if (event.data?.type === "INTERCOL_OPEN_INVOICE_FROM_UTILITIES") {
     const { customerName, customerId, paymentDay } = event.data;
     const reminderDate = nextInvoiceReminderDate(paymentDay);
@@ -570,6 +715,7 @@ window.addEventListener("message", (event) => {
       frame.contentWindow.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: state.pendingVerifiedBoxEditId }, "*");
       state.pendingVerifiedBoxEditId = null;
     }
+    sendPendingClientProcess(frame);
   }
   if (event.data?.type === "INTERCOL_CHECK_INVOICE_ALERTS") fireInvoiceBrowserAlerts();
   if (event.data?.type === "INTERCOL_AUTH_COMPLETE") refreshAdvisorState();
@@ -766,6 +912,7 @@ window.addEventListener("intercol-firebase-ready", startTemporaryMessageSync);
 startTemporaryMessageSync();
 
 let stopSupportConfigSync = null;
+let stopAdjustmentZonesSync = null;
 function normalizeSupportConfig(value) {
   const groups = value?.soporte || {};
   const sales = value?.ventas || {};
@@ -791,10 +938,25 @@ function startSupportConfigSync() {
     if (status) status.textContent = state.supportConfigError;
   });
 }
+function startAdjustmentZonesSync() {
+  const firebase = window.INTERCOL_FIREBASE;
+  if (!firebase?.subscribeAdjustmentZones || stopAdjustmentZonesSync) return;
+  stopAdjustmentZonesSync = firebase.subscribeAdjustmentZones(zones => {
+    if (Array.isArray(zones) && zones.length) state.adjustmentZones = zones.filter(zone => zone?.nombre && [15000, 20000].includes(Number(zone.valor)));
+    populateAdjustmentZonesForm();
+  }, error => {
+    console.error("No se pudo cargar el catálogo de zonas:", error);
+    state.adjustmentZonesError = error?.code === "permission-denied" ? "Firebase no permite leer las zonas. Publica las reglas actualizadas de zonasReajuste." : "No se pudo cargar el catálogo de zonas.";
+    const status = $("#adjustmentZonesStatus"); if (status) status.textContent = state.adjustmentZonesError;
+  });
+}
 window.addEventListener("intercol-firebase-ready", startSupportConfigSync);
 startSupportConfigSync();
+window.addEventListener("intercol-firebase-ready", startAdjustmentZonesSync);
+startAdjustmentZonesSync();
 
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+$("#startClientProcess").addEventListener("click", () => openClientProcessDialog());
 $("#themeToggle").addEventListener("click", toggleTheme);
 $("#themePill").addEventListener("click", toggleTheme);
 $("#menuToggle").addEventListener("click", toggleSidebar);

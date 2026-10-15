@@ -6,7 +6,7 @@
   <meta name="description" content="INTERCOL - Dashboard central para cargar secciones independientes.">
   <title>INTERCOL Dashboard</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="styles.css?v=20261015-invoice-toast-dismiss">
+  <link rel="stylesheet" href="styles.css?v=20261015-client-module">
 </head>
 <body>
   <div class="app-shell" id="appShell">
@@ -24,6 +24,7 @@
         <button class="nav-item" data-view="sections"><span class="nav-icon">▣</span><span>Secciones</span></button>
         <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span>Configuración</span></button>
       </nav>
+      <button class="sidebar-process-start" id="startClientProcess" type="button"><span aria-hidden="true">＋</span><span>Iniciar proceso nuevo</span></button>
 
       <div class="sidebar-section">
         <div class="section-heading">
@@ -66,9 +67,11 @@
           <div>
             <span class="eyebrow" id="pageEyebrow">ESPACIO DE TRABAJO</span>
             <h1 id="pageTitle">Dashboard</h1>
+            <p class="topbar-description" id="pageDescription" hidden></p>
           </div>
         </div>
         <div class="topbar-actions">
+          <button class="secondary-button section-back-button" id="topbarBackToSections" type="button" hidden>← Secciones</button>
           <button class="theme-pill" id="themePill" type="button"><span id="themePillIcon">☾</span><span id="themePillText">Oscuro</span></button>
         </div>
       </header>
@@ -78,9 +81,9 @@
     </main>
   </div>
 
-  <script src="secciones/registry.js"></script>
-  <script src="app.js?v=20261015-invoice-toast-dismiss"></script>
-  <script type="module" src="admin/firebase-config.js?v=20261015-port-autosave"></script>
+  <script src="secciones/registry.js?v=20261015-client-module"></script>
+  <script src="app.js?v=20261015-client-adjustment-zones"></script>
+  <script type="module" src="admin/firebase-config.js?v=20261015-client-adjustment-zones"></script>
 </body>
 </html>
 

@@ -11,7 +11,10 @@ const paymentNotifications = collection(firestore, "notificacionesPago");
 const retiredRecords = collection(firestore, "retirados");
 const tvRetirementRecords = collection(firestore, "retirosTv");
 const verifiedBoxes = collection(firestore, "cajasVerificadas");
+const clients = collection(firestore, "clientes");
+const clientProcesses = collection(firestore, "procesosClientes");
 const publicSupportConfig = doc(firestore, "configuracionPublica", "equipos");
+const adjustmentZonesConfig = doc(firestore, "configuracionPublica", "zonasReajuste");
 function usernameEmail(username) {
   const normalized = String(username).trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,30}$/.test(normalized)) throw new Error("El usuario debe tener entre 3 y 30 caracteres: letras, números, punto, guion o guion bajo.");
@@ -184,6 +187,69 @@ export function updateVerifiedBoxPorts(id, users) {
 }
 export function deleteVerifiedBox(id) { return deleteDoc(doc(firestore, "cajasVerificadas", id)); }
 export function subscribeVerifiedBoxes(onChange, onError) { return onSnapshot(verifiedBoxes, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+const normalizeCustomerId = value => String(value ?? "").trim().toLocaleLowerCase("es").replace(/[\s.-]/g, "");
+export function findClientByCedula(value) {
+  const normalized = normalizeCustomerId(value);
+  if (!normalized) return Promise.resolve(null);
+  return getDocs(query(clients, where("cedulaNormalizada", "==", normalized))).then(snapshot => {
+    const item = snapshot.docs[0];
+    return item ? { id: item.id, ...item.data() } : null;
+  });
+}
+export function createClient({ nombre, cedula, user }) {
+  const cleanName = String(nombre || "").trim();
+  const cleanId = String(cedula || "").trim();
+  if (!cleanName || !cleanId) return Promise.reject(new Error("Escribe el nombre y la cédula del cliente."));
+  return addDoc(clients, { nombre: cleanName, cedula: cleanId, cedulaNormalizada: normalizeCustomerId(cleanId), creadoPorUid: user?.uid || "", creadoPorNombre: String(user?.nombre || ""), creadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
+}
+export function subscribeClients(onChange, onError) { return onSnapshot(clients, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+export function subscribeClientProcesses(onChange, onError) { return onSnapshot(clientProcesses, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+export function createClientProcess({ client, type, user }) {
+  const stepsByType = {
+    reconexion: ["Confirmar cliente y forma de contacto", "Revisar facturas pendientes, pagos o abonos", "Consultar zona y calcular el reajuste", "Generar o ajustar la factura", "Actualizar fecha de pago o fecha de espera", "Registrar el técnico que atendió el caso", "Verificar si hubo cambio de plan", "Verificar el ticket de reconexión", "Dejar la anotación del proceso", "Programar revisión de la próxima factura", "Realizar la reconexión y confirmar el servicio"],
+    "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
+    "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
+  };
+  return addDoc(clientProcesses, { clienteId: client.id, clienteNombre: String(client.nombre || ""), clienteCedula: String(client.cedula || ""), tipo: String(type || ""), estado: "en_curso", informacion: {}, pasos: stepsByType[type] || [], pasosVerificados: [], iniciadoPorUid: user?.uid || "", iniciadoPorNombre: String(user?.nombre || ""), iniciadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
+}
+function cleanProcessInformationValue(value, seen = new WeakSet()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "undefined" || typeof value === "function" || typeof value === "symbol") return undefined;
+  if (typeof value === "bigint") return String(value);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  if (typeof value?.toDate === "function") {
+    const date = value.toDate();
+    return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
+  }
+  if (typeof value !== "object") return String(value);
+  if (seen.has(value)) return undefined;
+  seen.add(value);
+  if (Array.isArray(value)) return Array.from(value, item => cleanProcessInformationValue(item, seen)).map(item => item === undefined ? null : item);
+  if (value instanceof Map) return Object.fromEntries([...value.entries()].map(([key, item]) => [String(key), cleanProcessInformationValue(item, seen)]).filter(([, item]) => item !== undefined));
+  if (value instanceof Set) return [...value].map(item => cleanProcessInformationValue(item, seen)).filter(item => item !== undefined);
+  const entries = Object.entries(value).map(([key, item]) => [key, cleanProcessInformationValue(item, seen)]).filter(([, item]) => item !== undefined);
+  if (!entries.length && Object.keys(value).length === 0 && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return String(value);
+  return Object.fromEntries(entries);
+}
+function cleanProcessInformation(value) {
+  const cleaned = cleanProcessInformationValue(value);
+  return cleaned && typeof cleaned === "object" && !Array.isArray(cleaned) ? cleaned : {};
+}
+export function updateClientProcess(id, { informacion, pasos, pasosVerificados, estado, completadoEn } = {}) {
+  const changes = { actualizadoEn: serverTimestamp() };
+  if (informacion !== undefined) changes.informacion = cleanProcessInformation(informacion);
+  if (pasos !== undefined) changes.pasos = Array.from(pasos || [], step => String(step));
+  if (pasosVerificados !== undefined) changes.pasosVerificados = Array.from(pasosVerificados || [], step => Number(step));
+  if (estado !== undefined) {
+    changes.estado = estado;
+    if (estado === "completado") changes.completadoEn = serverTimestamp();
+    if (estado === "en_curso") changes.completadoEn = null;
+  }
+  if (completadoEn !== undefined) changes.completadoEn = completadoEn;
+  return updateDoc(doc(firestore, "procesosClientes", id), changes);
+}
+export function deleteClientProcess(id) { return deleteDoc(doc(firestore, "procesosClientes", id)); }
 export function subscribePublicSupportConfig(onChange, onError) { return onSnapshot(publicSupportConfig, snapshot => onChange(snapshot.exists() ? snapshot.data() : null), onError); }
 export function savePublicSupportConfig(value) {
   const groups = items => Array.from(items || [], item => String(item ?? "").trim()).filter(Boolean).slice(0, 100);
@@ -201,6 +267,12 @@ export function savePublicSupportConfig(value) {
     actualizadoEn: serverTimestamp()
   });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
+export function subscribeAdjustmentZones(onChange, onError) { return onSnapshot(adjustmentZonesConfig, snapshot => onChange(snapshot.exists() ? snapshot.data().zonas || [] : []), onError); }
+export function saveAdjustmentZones(zones) {
+  const cleanZones = Array.from(zones || [], zone => ({ nombre: String(zone.nombre || "").trim(), valor: Number(zone.valor) }))
+    .filter(zone => zone.nombre && [15000, 20000].includes(zone.valor));
+  return setDoc(adjustmentZonesConfig, { zonas: cleanZones, actualizadoEn: serverTimestamp() });
+}
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, findClientByCedula, createClient, subscribeClients, subscribeClientProcesses, createClientProcess, updateClientProcess, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

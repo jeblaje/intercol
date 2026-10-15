@@ -42,6 +42,10 @@ service cloud.firestore {
         (exists(advisorPath) && advisorRoleAllows(get(advisorPath).data.get('rol', 'asesor'), sectionId, action))
       ));
     }
+    function isRegisteredAdvisor() {
+      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
+      return signedIn() && exists(advisorPath);
+    }
     match /smsTemp/{messageId} {
       allow read: if true;
       allow create: if signedIn() && hasSectionPermission('mensajes-temporales', 'crear');
@@ -49,7 +53,8 @@ service cloud.firestore {
       allow delete: if signedIn() && hasSectionPermission('mensajes-temporales', 'eliminar');
     }
     match /configuracionPublica/{configId} {
-      allow read: if configId == 'equipos' && (!signedIn() || hasSectionPermission('utilidades', 'ver'));
+      allow read: if (configId == 'equipos' && (!signedIn() || hasSectionPermission('utilidades', 'ver')))
+        || (configId == 'zonasReajuste' && isRegisteredAdvisor());
       allow create, update: if configId == 'equipos' && (!signedIn() || hasSectionPermission('utilidades', 'editar'))
         && request.resource.data.keys().hasOnly(['soporte', 'ventas', 'actualizadoEn'])
         && request.resource.data.keys().hasAll(['soporte', 'ventas', 'actualizadoEn'])
@@ -65,6 +70,12 @@ service cloud.firestore {
         && request.resource.data.soporte.riohacha is list
         && request.resource.data.ventas.valledupar is list
         && request.resource.data.ventas.pueblos is list;
+      allow create, update: if configId == 'zonasReajuste'
+        && (hasAdministratorRole() || isSystemAdmin())
+        && request.resource.data.keys().hasOnly(['zonas', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['zonas', 'actualizadoEn'])
+        && request.resource.data.zonas is list
+        && request.resource.data.zonas.size() <= 200;
       allow delete: if false;
     }
     match /cajasVerificadas/{boxId} {
@@ -166,6 +177,40 @@ service cloud.firestore {
       allow create: if signedIn() && (isSystemAdmin() || (hasSectionPermission('retiros-tv', 'crear') && request.resource.data.asesorCreadorUid == request.auth.uid));
       allow update: if signedIn() && (isSystemAdmin() || (resource.data.asesorCreadorUid == request.auth.uid && hasSectionPermission('retiros-tv', 'editar') && request.resource.data.asesorCreadorUid == request.auth.uid));
       allow delete: if signedIn() && (isSystemAdmin() || (resource.data.asesorCreadorUid == request.auth.uid && hasSectionPermission('retiros-tv', 'eliminar')));
+    }
+    match /clientes/{clientId} {
+      allow read: if isRegisteredAdvisor();
+      allow create: if isRegisteredAdvisor()
+        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'cedulaNormalizada', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['nombre', 'cedula', 'cedulaNormalizada', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
+        && request.resource.data.nombre is string
+        && request.resource.data.cedula is string
+        && request.resource.data.cedulaNormalizada is string
+        && request.resource.data.creadoPorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+    match /procesosClientes/{processId} {
+      allow read: if isRegisteredAdvisor();
+      allow create: if isRegisteredAdvisor()
+        && request.resource.data.keys().hasOnly(['clienteId', 'clienteNombre', 'clienteCedula', 'tipo', 'estado', 'informacion', 'pasos', 'pasosVerificados', 'iniciadoPorUid', 'iniciadoPorNombre', 'iniciadoEn', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['clienteId', 'clienteNombre', 'clienteCedula', 'tipo', 'estado', 'informacion', 'pasos', 'pasosVerificados', 'iniciadoPorUid', 'iniciadoPorNombre', 'iniciadoEn', 'actualizadoEn'])
+        && request.resource.data.tipo in ['reconexion', 'cambio-fecha-pago', 'cambio-plan']
+        && request.resource.data.estado == 'en_curso'
+        && request.resource.data.informacion is map
+        && request.resource.data.pasos is list
+        && request.resource.data.pasosVerificados is list
+        && request.resource.data.iniciadoPorUid == request.auth.uid
+        && exists(/databases/$(database)/documents/clientes/$(request.resource.data.clienteId));
+      allow update: if isRegisteredAdvisor()
+        && resource.data.iniciadoPorUid == request.auth.uid
+        && request.resource.data.iniciadoPorUid == resource.data.iniciadoPorUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['informacion', 'pasos', 'pasosVerificados', 'estado', 'actualizadoEn', 'completadoEn'])
+        && request.resource.data.informacion is map
+        && request.resource.data.pasos is list
+        && request.resource.data.pasosVerificados is list
+        && request.resource.data.estado in ['en_curso', 'completado'];
+      allow delete: if isRegisteredAdvisor()
+        && (resource.data.iniciadoPorUid == request.auth.uid || hasAdministratorRole() || isSystemAdmin());
     }
     match /{document=**} { allow read, write: if false; }
   }
