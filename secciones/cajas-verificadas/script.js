@@ -7,6 +7,7 @@ const typeFilter = document.querySelector("#boxType");
 let boxes = [];
 let loaded = false;
 let stopSubscription = null;
+let viewerAuth = { user: null, profile: null, isAdmin: false };
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const serviceText = state => ({ active: "ACTIVO", suspended: "SUSPENDIDO", cancelled: "CANCELADO", notRegistered: "NO REGISTRA" }[state] || "ACTIVO");
@@ -57,7 +58,9 @@ function showDetail(box) {
     const commentActionClass = action && action !== "active" ? ` action-comment-${action === "addressChange" ? "address-change" : action === "notRegistered" ? "not-registered" : action}` : "";
     return `<article class="port-card ${serviceClass(state)}"><div class="port-id"><strong>${esc(user.cedula)}</strong><span class="service-state-badge">${serviceText(state)}</span></div><div class="port-values"><span>Puerto (lista del técnico): <b>${esc(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPort(user.puertoReal || user.puertoTecnico, box.tipoCaja)}</b></span></div>${user.comentario ? `<p class="port-comment${commentActionClass}">${esc(user.comentario)}</p>` : ""}</article>`;
   }).join("");
-  boxDetail.innerHTML = `<div class="ficha"><div class="ficha-head"><div><span class="ficha-kicker">FICHA DE CAJA VERIFICADA</span><h2>${esc(box.numeroCaja || "Sin número")}</h2></div>${link ? `<a class="filter-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : '<span class="filter-link disabled">Sin link de filtro</span>'}</div><dl class="data"><div><dt>Fecha</dt><dd>${esc(displayDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${esc(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${esc(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${esc(box.tecnico || "—")}</dd></div><div><dt>Asesor de la caja</dt><dd>${esc(box.asesor || "—")}</dd></div></dl><h3>Puertos e identificaciones</h3><div class="ports">${users || '<p class="creator">No se guardaron puertos.</p>'}</div><p class="creator">Registrada por: ${esc(box.creadoPor || "—")} · Usuario registrado: ${esc(box.usuarioRegistrado || "—")}</p></div>`;
+  const canEdit = Boolean(viewerAuth.user && (viewerAuth.isAdmin || viewerAuth.profile?.rol === "administrador" || box.asesorUid === viewerAuth.user.uid));
+  boxDetail.innerHTML = `<div class="ficha"><div class="ficha-head"><div><span class="ficha-kicker">FICHA DE CAJA VERIFICADA</span><h2>${esc(box.numeroCaja || "Sin número")}</h2></div><div class="ficha-actions">${canEdit ? '<button class="filter-link edit-box-button" type="button" id="editBoxFromVerified">Editar caja</button>' : ""}${link ? `<a class="filter-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : '<span class="filter-link disabled">Sin link de filtro</span>'}</div></div><dl class="data"><div><dt>Fecha</dt><dd>${esc(displayDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${esc(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${esc(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${esc(box.tecnico || "—")}</dd></div><div><dt>Asesor de la caja</dt><dd>${esc(box.asesor || "—")}</dd></div></dl><h3>Puertos e identificaciones</h3><div class="ports">${users || '<p class="creator">No se guardaron puertos.</p>'}</div><p class="creator">Registrada por: ${esc(box.creadoPor || "—")} · Usuario registrado: ${esc(box.usuarioRegistrado || "—")}</p></div>`;
+  document.querySelector("#editBoxFromVerified")?.addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: box.id }, "*"));
   renderList();
 }
 function subscribe() {
@@ -87,6 +90,12 @@ function subscribe() {
 search.addEventListener("input", renderList);
 typeFilter.addEventListener("change", renderList);
 window.addEventListener("message", event => {
+  if (event.data?.type === "INTERCOL_AUTH_STATE") {
+    viewerAuth = { user: event.data.user || null, profile: event.data.profile || null, isAdmin: Boolean(event.data.isAdmin) };
+    const selected = boxes.find(box => box.id === boxDetail.dataset.boxId);
+    if (selected) showDetail(selected);
+    return;
+  }
   if (event.data?.type !== "INTERCOL_THEME") return;
   document.documentElement.dataset.theme = event.data.theme || "light";
   for (const [name, value] of Object.entries(event.data.variables || {})) document.documentElement.style.setProperty(name, value);

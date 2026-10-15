@@ -20,6 +20,7 @@ const state = {
   pendingSectionId: null,
   pendingInvoiceId: null,
   pendingInvoiceDraft: null,
+  pendingVerifiedBoxEditId: null,
   invoiceNotifications: [],
   invoiceToastStartedAt: new Map(),
   theme: loadTheme()
@@ -473,6 +474,10 @@ function openSection(id) {
       frame.contentWindow.postMessage({ type: "INTERCOL_PREFILL_INVOICE", ...state.pendingInvoiceDraft }, "*");
       state.pendingInvoiceDraft = null;
     }
+    if (state.activeSectionId === "verificar-caja" && state.pendingVerifiedBoxEditId) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: state.pendingVerifiedBoxEditId }, "*");
+      state.pendingVerifiedBoxEditId = null;
+    }
     frame.contentWindow.scrollTo(0, 0);
   });
   window.scrollTo(0, 0);
@@ -522,6 +527,11 @@ window.addEventListener("message", (event) => {
     openSection("cajas-verificadas");
     return;
   }
+  if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_EDIT_VERIFIED_BOX") {
+    state.pendingVerifiedBoxEditId = String(event.data.id || "");
+    openSection("verificar-caja");
+    return;
+  }
   if (event.source !== frame?.contentWindow) return;
   if (event.data?.type === "INTERCOL_OPEN_INVOICE_FROM_UTILITIES") {
     const { customerName, customerId, paymentDay } = event.data;
@@ -556,6 +566,10 @@ window.addEventListener("message", (event) => {
       frame.contentWindow.postMessage({ type: "INTERCOL_PREFILL_INVOICE", ...state.pendingInvoiceDraft }, "*");
       state.pendingInvoiceDraft = null;
     }
+    if (state.activeSectionId === "verificar-caja" && state.pendingVerifiedBoxEditId) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: state.pendingVerifiedBoxEditId }, "*");
+      state.pendingVerifiedBoxEditId = null;
+    }
   }
   if (event.data?.type === "INTERCOL_CHECK_INVOICE_ALERTS") fireInvoiceBrowserAlerts();
   if (event.data?.type === "INTERCOL_AUTH_COMPLETE") refreshAdvisorState();
@@ -586,6 +600,7 @@ function invoiceReminderTimestamp(value) {
   return new Date(dateValue).getTime();
 }
 function invoiceAlertStorageKey(record) { return "intercol_factura_alerta_" + state.currentUser?.uid + "_" + record.id + "_" + record.notificationDate; }
+function invoiceAlertDismissKey(record) { return invoiceAlertStorageKey(record) + "_oculta"; }
 function dueInvoiceNotifications() {
   const now = Date.now();
   return state.invoiceNotifications.filter(record => !record.reviewed && invoiceReminderTimestamp(record.notificationDate) <= now);
@@ -604,14 +619,28 @@ function renderInvoiceAlertHost() {
   host.replaceChildren();
   const now = Date.now();
   dueInvoiceNotifications().filter(record => {
+    if (localStorage.getItem(invoiceAlertDismissKey(record)) === "1") return false;
     const key = invoiceAlertStorageKey(record);
     if (!state.invoiceToastStartedAt.has(key)) state.invoiceToastStartedAt.set(key, now);
     return now - state.invoiceToastStartedAt.get(key) < 60000;
   }).forEach(record => {
     const card = document.createElement("article");
     card.className = "invoice-alert-card";
+    const cardHeader = document.createElement("div");
+    cardHeader.className = "invoice-alert-header";
     const heading = document.createElement("strong");
     heading.textContent = "Verifica la generación de esta factura";
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "invoice-alert-dismiss";
+    dismiss.textContent = "×";
+    dismiss.setAttribute("aria-label", "Ocultar notificación");
+    dismiss.title = "Ocultar notificación";
+    dismiss.addEventListener("click", () => {
+      localStorage.setItem(invoiceAlertDismissKey(record), "1");
+      renderInvoiceAlertHost();
+    });
+    cardHeader.append(heading, dismiss);
     const details = document.createElement("p");
     details.textContent = record.customerName + " · Cédula " + record.customerId + " · " + formatInvoiceReminder(record.notificationDate);
     const actions = document.createElement("div");
@@ -628,7 +657,7 @@ function renderInvoiceAlertHost() {
     invoice.target = "_blank";
     invoice.rel = "noopener noreferrer";
     actions.append(open, invoice);
-    card.append(heading, details, actions);
+    card.append(cardHeader, details, actions);
     host.append(card);
   });
 }

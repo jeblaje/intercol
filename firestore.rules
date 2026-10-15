@@ -8,6 +8,11 @@ service cloud.firestore {
         || request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com'
       );
     }
+    function hasAdministratorRole() {
+      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
+      return signedIn() && exists(advisorPath)
+        && get(advisorPath).data.get('rol', 'asesor') == 'administrador';
+    }
     function hasAdminPanelPermission(sectionId) {
       let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
       let roleId = exists(advisorPath) ? get(advisorPath).data.get('rol', 'asesor') : 'asesor';
@@ -68,9 +73,9 @@ service cloud.firestore {
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
         && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn']);
       allow update: if signedIn() && hasSectionPermission('cajas-verificadas', 'editar')
-        && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid);
+        && (isSystemAdmin() || hasAdministratorRole() || resource.data.asesorUid == request.auth.uid);
       allow delete: if signedIn() && hasSectionPermission('cajas-verificadas', 'eliminar')
-        && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid);
+        && (isSystemAdmin() || hasAdministratorRole() || resource.data.asesorUid == request.auth.uid);
     }
     match /asesores/{advisorUid} {
       allow create: if signedIn() && request.auth.uid == advisorUid

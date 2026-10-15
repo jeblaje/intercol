@@ -283,7 +283,7 @@ h1 { margin: 4px 0 0; font-size: 22px; letter-spacing: -.02em; }
 
 .invoice-alert-host{position:fixed;top:88px;right:24px;z-index:50;display:grid;gap:10px;width:min(390px,calc(100vw - var(--sidebar-width) - 36px));max-height:calc(100vh - 110px);overflow:auto}
 .invoice-alert-card{padding:15px;border:1px solid color-mix(in srgb,#dc2626 35%,var(--border));border-left:4px solid #dc2626;border-radius:13px;background:var(--surface);color:var(--text);box-shadow:0 14px 36px rgba(15,23,42,.18);animation:invoice-alert-enter .22s ease-out}
-.invoice-alert-card strong{display:block;font-size:13px}
+.invoice-alert-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.invoice-alert-card strong{display:block;font-size:13px}.invoice-alert-dismiss{display:grid;place-items:center;flex:0 0 26px;width:26px;height:26px;margin:-5px -5px 0 0;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:21px;line-height:1;cursor:pointer}.invoice-alert-dismiss:hover{background:var(--surface-3);color:var(--text)}.invoice-alert-dismiss:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
 .invoice-alert-card p{margin:5px 0 12px;color:var(--muted);font-size:11px;line-height:1.5}
 .invoice-alert-actions{display:flex;gap:8px;flex-wrap:wrap}
 .invoice-alert-actions button,.invoice-alert-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);font-size:10px;font-weight:750;text-decoration:none;cursor:pointer}

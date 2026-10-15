@@ -30,6 +30,10 @@ let advisorAuth = { user: null, profile: null, isAdmin: false };
 let verifiedBoxes = [];
 let stopVerifiedBoxSync = null;
 let editingVerifiedBoxId = null;
+let pendingVerifiedBoxEditId = null;
+let portAutosaveTimer = null;
+let portAutosaveDirty = false;
+let portAutosaveQueue = Promise.resolve();
 const onuUrl = cedula => `https://intercolwisp.smartolt.com/onu/configured?free_text=${encodeURIComponent(cedula)}&sort_by=id&sort_order=desc`;
 const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponent(cedula)}@cibercitywisp/#set1`;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -84,6 +88,11 @@ function syncVerifiedBoxes() {
     renderVerifiedBoxes();
     const selectedBox = verifiedBoxes.find(box => box.id === verifiedDetail.dataset.boxId);
     if (selectedBox) showVerifiedBox(selectedBox);
+    if (pendingVerifiedBoxEditId) {
+      const editBox = verifiedBoxes.find(box => box.id === pendingVerifiedBoxEditId);
+      if (editBox && canManageVerifiedBox(editBox)) { pendingVerifiedBoxEditId = null; beginVerifiedBoxEdit(editBox); }
+      else if (editBox) { pendingVerifiedBoxEditId = null; verifiedStatus.textContent = "No tienes permiso para editar esta caja."; }
+    }
   }, error => {
     console.error("No se pudieron cargar las cajas verificadas:", error);
     verifiedCount.textContent = "Error";
@@ -153,7 +162,7 @@ function showVerifiedBox(box) {
 }
 
 function canManageVerifiedBox(box) {
-  return Boolean(advisorAuth.user && box && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
+  return Boolean(advisorAuth.user && box && (advisorAuth.isAdmin || advisorAuth.profile?.rol === "administrador" || box.asesorUid === advisorAuth.user.uid));
 }
 
 function beginVerifiedBoxEdit(box) {
@@ -178,6 +187,7 @@ function beginVerifiedBoxEdit(box) {
   })));
   selectedId = users[0]?.id || null;
   editingVerifiedBoxId = box.id;
+  window.clearTimeout(portAutosaveTimer); portAutosaveTimer = null; portAutosaveDirty = false;
   markBoxVerifiedButton.textContent = "Guardar cambios";
   cancelBoxEditButton.hidden = false;
   copyStatus.textContent = `Editando ${box.numeroCaja || "la caja verificada"}. Guarda los cambios con el botón “Guardar cambios”.`;
@@ -218,6 +228,49 @@ function saveBoxDraft() {
   try {
     localStorage.setItem(BOX_DRAFT_KEY, JSON.stringify({ form: boxData(), users, selectedId }));
   } catch { /* local storage can be unavailable in private browsing */ }
+}
+
+function schedulePortAutosave() {
+  saveBoxDraft();
+  if (!editingVerifiedBoxId) return;
+  portAutosaveDirty = true;
+  verifiedStatus.textContent = "Cambios del puerto pendientes de guardado automático…";
+  window.clearTimeout(portAutosaveTimer);
+  portAutosaveTimer = window.setTimeout(() => { persistPortChanges(); }, 450);
+}
+
+function persistPortChanges() {
+  window.clearTimeout(portAutosaveTimer);
+  portAutosaveTimer = null;
+  if (!portAutosaveDirty || !editingVerifiedBoxId) return portAutosaveQueue;
+  const boxId = editingVerifiedBoxId;
+  const firebase = window.parent.INTERCOL_FIREBASE;
+  if (!firebase?.updateVerifiedBoxPorts) {
+    verifiedStatus.textContent = "No se pudo iniciar el guardado automático. Recarga la página.";
+    return portAutosaveQueue;
+  }
+  const portData = users.slice().sort((a, b) => listOrderFor(a) - listOrderFor(b)).map(user => ({
+    cedula: user.cedula,
+    puertoTecnico: listOrderFor(user),
+    puertoReal: portFor(user),
+    comentario: String(user.comment || ""),
+    fondoNaranja: Boolean(user.orangeBackground),
+    accionPuerto: portActionFor(user),
+    estadoServicio: serviceStatusFor(user)
+  }));
+  portAutosaveDirty = false;
+  portAutosaveQueue = portAutosaveQueue.then(() => firebase.updateVerifiedBoxPorts(boxId, portData)).then(() => {
+    if (editingVerifiedBoxId === boxId && !portAutosaveDirty) verifiedStatus.textContent = "Cambios del puerto guardados automáticamente.";
+  }).catch(error => {
+    console.error("No se pudo guardar automáticamente el puerto:", error);
+    portAutosaveDirty = true;
+    if (editingVerifiedBoxId === boxId) {
+      verifiedStatus.textContent = error?.code === "permission-denied"
+        ? "Firebase no autorizó el guardado automático. Publica las reglas actualizadas de cajas verificadas."
+        : "No se pudo guardar el puerto automáticamente. Se conserva el borrador local; revisa la conexión.";
+    }
+  });
+  return portAutosaveQueue;
 }
 
 function restoreBoxDraft() {
@@ -302,6 +355,8 @@ async function saveVerifiedBox() {
     if (editingVerifiedBoxId) {
       const box = verifiedBoxes.find(item => item.id === editingVerifiedBoxId);
       if (!canManageVerifiedBox(box)) throw new Error("No tienes permiso para editar esta caja.");
+      window.clearTimeout(portAutosaveTimer); portAutosaveTimer = null; portAutosaveDirty = false;
+      await portAutosaveQueue;
       await firebase.updateVerifiedBox(editingVerifiedBoxId, verifiedBoxData);
       verifiedStatus.textContent = "Cambios guardados. La ficha se actualizó para todos los asesores.";
     } else {
@@ -324,6 +379,7 @@ async function saveVerifiedBox() {
 }
 
 function resetBoxForm() {
+  window.clearTimeout(portAutosaveTimer); portAutosaveTimer = null; portAutosaveDirty = false;
   boxForm.reset();
   const resetToday = new Date();
   dateField.value = new Date(resetToday.getTime() - resetToday.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -468,6 +524,7 @@ function changePortAction(user, nextAction) {
 }
 
 function selectUser(id) {
+  if (selectedId && selectedId !== id && portAutosaveDirty) persistPortChanges();
   selectedId = id;
   const user = users.find(item => item.id === id);
   if (!user) return;
@@ -481,24 +538,24 @@ function selectUser(id) {
   editForm.className = "record-edit-form";
   editForm.innerHTML = `<label for="editIdentity">Cédula o dirección</label><input id="editIdentity" name="identity" required value="${escapeHtml(user.cedula)}"><label for="editPort">Puerto real (1–${data.boxType === "x16" ? "16" : "8"})</label><input id="editPort" name="port" type="number" min="1" max="${data.boxType === "x16" ? "16" : "8"}" step="1" required value="${portFor(user)}"><button type="submit" class="secondary">Guardar cambios</button>`;
   detailPanel.querySelector(".user-detail").insertBefore(editForm, detailPanel.querySelector(".detail-links"));
-  editForm.addEventListener("submit", event => { event.preventDefault(); const identity = editForm.elements.identity.value.trim(); const port = Number(editForm.elements.port.value); const maxPort = data.boxType === "x16" ? 16 : 8; if (!identity || !Number.isInteger(port) || port < 1 || port > maxPort) return; if (users.some(item => item.id !== user.id && item.cedula.toLocaleLowerCase() === identity.toLocaleLowerCase())) { inlineError.textContent = "Ese dato ya está registrado."; return; } user.cedula = identity; user.port = port; inlineError.textContent = ""; selectUser(user.id); });
+  editForm.addEventListener("submit", event => { event.preventDefault(); const identity = editForm.elements.identity.value.trim(); const port = Number(editForm.elements.port.value); const maxPort = data.boxType === "x16" ? 16 : 8; if (!identity || !Number.isInteger(port) || port < 1 || port > maxPort) return; if (users.some(item => item.id !== user.id && item.cedula.toLocaleLowerCase() === identity.toLocaleLowerCase())) { inlineError.textContent = "Ese dato ya está registrado."; return; } user.cedula = identity; user.port = port; inlineError.textContent = ""; schedulePortAutosave(); selectUser(user.id); });
   detailPanel.querySelector("#portComment").addEventListener("input", event => {
     user.comment = event.target.value;
     updateSheetRows();
-    saveBoxDraft();
+    schedulePortAutosave();
   });
   detailPanel.querySelectorAll('input[name="portAction"]').forEach(input => input.addEventListener("change", event => {
     changePortAction(user, event.target.value);
     detailPanel.querySelector("#portComment").value = user.comment;
     detailPanel.querySelector("#portComment").className = `port-comment${event.target.value ? ` action-${event.target.value === "addressChange" ? "address-change" : event.target.value === "notRegistered" ? "not-registered" : event.target.value}` : ""}`;
-    saveBoxDraft();
+    schedulePortAutosave();
     renderList();
     updatePortAnnotation();
     selectUser(user.id);
   }));
   detailPanel.querySelectorAll('input[name="serviceStatus"]').forEach(input => input.addEventListener("change", event => {
     user.serviceStatus = event.target.value;
-    saveBoxDraft();
+    schedulePortAutosave();
     updateSheetRows();
     renderList();
     selectUser(user.id);
@@ -552,6 +609,7 @@ boxForm.addEventListener("input", () => {
 });
 
 document.querySelector("#clearUsers").addEventListener("click", () => {
+  if (portAutosaveDirty) persistPortChanges();
   editingVerifiedBoxId = null;
   resetBoxForm();
 });
@@ -679,6 +737,13 @@ window.addEventListener("message", event => {
     advisorAuth = { user: event.data.user || null, profile: event.data.profile || null, isAdmin: Boolean(event.data.isAdmin) };
     if (previousUid !== advisorAuth.user?.uid || previouslyReady !== Boolean(advisorAuth.user && advisorAuth.profile)) syncVerifiedBoxes();
     else renderVerifiedBoxes();
+  }
+  if (event.data?.type === "INTERCOL_EDIT_VERIFIED_BOX") {
+    const id = String(event.data.id || "");
+    const box = verifiedBoxes.find(item => item.id === id);
+    if (box && canManageVerifiedBox(box)) beginVerifiedBoxEdit(box);
+    else if (box) verifiedStatus.textContent = "No tienes permiso para editar esta caja.";
+    else pendingVerifiedBoxEditId = id;
   }
 });
 window.parent.postMessage({ type: "INTERCOL_SECTION_READY" }, "*");

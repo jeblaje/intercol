@@ -128,7 +128,9 @@ export function createVerifiedBox(data) {
     puertoTecnico: Number(user.puertoTecnico),
     puertoReal: Number(user.puertoReal),
     comentario: String(user.comentario ?? ""),
-    fondoNaranja: Boolean(user.fondoNaranja)
+    fondoNaranja: Boolean(user.fondoNaranja),
+    accionPuerto: String(user.accionPuerto ?? ""),
+    estadoServicio: String(user.estadoServicio ?? "active")
   }));
   const record = {
     fecha: String(data.fecha ?? ""),
@@ -152,7 +154,9 @@ export function updateVerifiedBox(id, data) {
     puertoTecnico: Number(user.puertoTecnico),
     puertoReal: Number(user.puertoReal),
     comentario: String(user.comentario ?? ""),
-    fondoNaranja: Boolean(user.fondoNaranja)
+    fondoNaranja: Boolean(user.fondoNaranja),
+    accionPuerto: String(user.accionPuerto ?? ""),
+    estadoServicio: String(user.estadoServicio ?? "active")
   }));
   return updateDoc(doc(firestore, "cajasVerificadas", id), {
     fecha: String(data.fecha ?? ""),
@@ -165,6 +169,18 @@ export function updateVerifiedBox(id, data) {
     cedulas,
     actualizadoEn: serverTimestamp()
   });
+}
+export function updateVerifiedBoxPorts(id, users) {
+  const cedulas = Array.from(users || [], user => ({
+    cedula: String(user.cedula ?? ""),
+    puertoTecnico: Number(user.puertoTecnico),
+    puertoReal: Number(user.puertoReal),
+    comentario: String(user.comentario ?? ""),
+    fondoNaranja: Boolean(user.fondoNaranja),
+    accionPuerto: String(user.accionPuerto ?? ""),
+    estadoServicio: String(user.estadoServicio ?? "active")
+  }));
+  return updateDoc(doc(firestore, "cajasVerificadas", id), { cedulas, actualizadoEn: serverTimestamp() });
 }
 export function deleteVerifiedBox(id) { return deleteDoc(doc(firestore, "cajasVerificadas", id)); }
 export function subscribeVerifiedBoxes(onChange, onError) { return onSnapshot(verifiedBoxes, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
@@ -185,6 +201,6 @@ export function savePublicSupportConfig(value) {
     actualizadoEn: serverTimestamp()
   });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, deleteVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribePublicSupportConfig, savePublicSupportConfig };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 
