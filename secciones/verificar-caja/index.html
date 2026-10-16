@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Verificar Caja · INTERCOL</title>
-  <link rel="stylesheet" href="style.css?v=20261009-comment-state-groups-2">
+  <link rel="stylesheet" href="style.css?v=20261016-latest-verification-banner">
 </head>
 <body>
   <main class="section-app">
@@ -19,7 +19,7 @@
         <form id="boxForm" class="card-body">
           <label for="boxDate">Fecha</label><input id="boxDate" name="date" type="date" required>
           <fieldset class="type-field"><legend>Tipo de caja</legend><div class="choice-group"><label class="choice"><input type="radio" name="boxType" value="x8" checked><span>x8</span></label><label class="choice"><input type="radio" name="boxType" value="x16"><span>x16</span></label></div></fieldset>
-          <label for="boxNumber">Número de caja</label><input id="boxNumber" name="boxNumber" type="text" placeholder="Ej. 102 o Sin número" required>
+          <label for="boxNumber">Número de caja</label><input id="boxNumber" name="boxNumber" type="text" placeholder="Ej. 102 o Sin número" required><p class="box-lookup-status" id="boxLookupStatus" role="status" aria-live="polite">Al escribir un número guardado, se cargarán los datos de la última verificación.</p>
           <label for="address">Dirección</label><input id="address" name="address" type="text" placeholder="Dirección de la caja" required>
           <label for="technician">Técnico</label><input id="technician" name="technician" type="text" placeholder="Nombre del técnico" required>
           <label for="advisor">Asesor</label><input id="advisor" name="advisor" type="text" placeholder="Nombre del asesor" required>
@@ -58,7 +58,7 @@
     </section>
 
     <section class="card verified-card" aria-labelledby="verifiedTitle">
-      <header class="card-header"><div class="step">04</div><div><h2 id="verifiedTitle">Cajas verificadas</h2><p>Consulta pública; guardar una caja requiere iniciar sesión.</p></div><button type="button" class="secondary" id="openPublicVerifiedList">Abrir listado público ↗</button><span id="verifiedCount" class="count-badge">Cargando…</span></header>
+      <header class="card-header"><div class="step">04</div><div><h2 id="verifiedTitle">Registros guardados</h2><p>Consulta, edita o elimina registros existentes.</p></div><button type="button" class="secondary" id="openPublicVerifiedList">Abrir catálogo de cajas ↗</button><span id="verifiedCount" class="count-badge">Cargando…</span></header>
       <div class="card-body verified-body">
         <div class="verified-filters"><label class="sr-only" for="verifiedSearch">Buscar cajas</label><input id="verifiedSearch" type="search" placeholder="Buscar por caja, dirección, técnico, asesor o cédula"><label class="sr-only" for="verifiedType">Filtrar tipo de caja</label><select id="verifiedType"><option value="all">Todas las cajas</option><option value="x8">X8</option><option value="x16">X16</option></select></div>
         <p id="verifiedStatus" class="verified-status" role="status" aria-live="polite">Cargando cajas verificadas…</p>
@@ -67,7 +67,7 @@
     </section>
 
   </main>
-  <script src="script.js?v=20261015-port-autosave"></script>
+  <script src="script.js?v=20261016-records-label-and-latest-verification"></script>
 </body>
 </html>
 

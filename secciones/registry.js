@@ -63,12 +63,13 @@ window.INTERCOL_SECTIONS = [
     sidebarGroup: "personal"
   },
   {
-    id: "cajas-verificadas",
-    name: "Cajas verificadas",
-    description: "Consulta las cajas compartidas con tu cuenta registrada.",
+    id: "cajas",
+    name: "Cajas",
+    description: "Consulta cada caja, su última verificación y el historial completo.",
     icon: "▤",
-    path: "secciones/cajas-verificadas/index.html",
-    requiresAuth: true
+    path: "secciones/cajas/index.html",
+    requiresAuth: true,
+    inheritsPermissionsFrom: "verificar-caja"
   },
   {
     id: "clientes",

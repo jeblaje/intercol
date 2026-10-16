@@ -20,7 +20,7 @@ applyAdminTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "li
 $("#adminThemeToggle").addEventListener("click", toggleAdminTheme);
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char])); }
 function listSections() { return (window.INTERCOL_SECTIONS || []).filter(section => !section.hideFromLists && section.id !== "acceso"); }
-function listPermissionSections() { return [...listSections().filter(section => section.requiresAuth), { id: "roles-permisos", name: "Roles y permisos", description: "Administrar roles y sus permisos." }]; }
+function listPermissionSections() { return [...listSections().filter(section => section.requiresAuth && !section.inheritsPermissionsFrom), { id: "roles-permisos", name: "Roles y permisos", description: "Administrar roles y sus permisos." }]; }
 const adminPanelSections = [
   { key: "dashboard", view: "dashboard", name: "Dashboard" },
   { key: "asesores", view: "advisors", name: "Asesores" },

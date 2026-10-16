@@ -1,7 +1,7 @@
 // Configuración e inicialización de Firebase para INTERCOL.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, updatePassword, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where, setDoc } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 export const firebaseConfig = { apiKey: "AIzaSyDK0tK8yptJYD8R6f0VkoiyW2Lekl9KKAQ", authDomain: "intercol-784d9.firebaseapp.com", projectId: "intercol-784d9", storageBucket: "intercol-784d9.firebasestorage.app", messagingSenderId: "380146455867", appId: "1:380146455867:web:2d3b17e736f16ce88a931e" };
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firestore = getFirestore(firebaseApp);
@@ -102,7 +102,7 @@ export function deleteAdvisorRole(roleId) { return deleteDoc(doc(firestore, "rol
 export function assignAdvisorRole(uid, roleId, updatedBy) { return updateDoc(doc(firestore, "asesores", uid), { rol: roleId, rolActualizadoPor: updatedBy, rolActualizadoEn: serverTimestamp() }); }
 export function observeAuth(callback) { return onAuthStateChanged(auth, callback); }
 export function subscribePaymentNotifications(uid, onChange, onError) { return onSnapshot(query(paymentNotifications, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
-export function createPaymentNotification({ customerName, customerId, notificationDate, advisorUid, advisorName, paymentDay = null }) { return addDoc(paymentNotifications, { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, ...(paymentDay ? { diaPago: paymentDay } : {}), asesorUid: advisorUid, asesor: advisorName, revisado: false, revisadoEn: null, revisadoPor: null, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
+export function createPaymentNotification({ customerName, customerId, notificationDate, advisorUid, advisorName, paymentDay = null, processId = "" }) { const data = { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, ...(paymentDay ? { diaPago: paymentDay } : {}), ...(processId ? { processId: String(processId) } : {}), asesorUid: advisorUid, asesor: advisorName, revisado: false, revisadoEn: null, revisadoPor: null, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }; if (!processId) return addDoc(paymentNotifications, data); const id = `reconexion_${String(processId).replace(/[^a-zA-Z0-9_-]/g, "")}`; return setDoc(doc(firestore, "notificacionesPago", id), data).then(() => ({ id })); }
 export function subscribeRetiredRecords(uid, onChange, onError) { return onSnapshot(query(retiredRecords, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 export function createRetiredRecord(data) { return addDoc(retiredRecords, { ...data, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
 export function updateRetiredRecord(id, data) { return updateDoc(doc(firestore, "retirados", id), { ...data, actualizadoEn: serverTimestamp() }); }
@@ -133,7 +133,8 @@ export function createVerifiedBox(data) {
     comentario: String(user.comentario ?? ""),
     fondoNaranja: Boolean(user.fondoNaranja),
     accionPuerto: String(user.accionPuerto ?? ""),
-    estadoServicio: String(user.estadoServicio ?? "active")
+    estadoServicio: String(user.estadoServicio ?? "active"),
+    suspendidoDesde: String(user.suspendidoDesde ?? "")
   }));
   const record = {
     fecha: String(data.fecha ?? ""),
@@ -159,7 +160,8 @@ export function updateVerifiedBox(id, data) {
     comentario: String(user.comentario ?? ""),
     fondoNaranja: Boolean(user.fondoNaranja),
     accionPuerto: String(user.accionPuerto ?? ""),
-    estadoServicio: String(user.estadoServicio ?? "active")
+    estadoServicio: String(user.estadoServicio ?? "active"),
+    suspendidoDesde: String(user.suspendidoDesde ?? "")
   }));
   return updateDoc(doc(firestore, "cajasVerificadas", id), {
     fecha: String(data.fecha ?? ""),
@@ -181,7 +183,8 @@ export function updateVerifiedBoxPorts(id, users) {
     comentario: String(user.comentario ?? ""),
     fondoNaranja: Boolean(user.fondoNaranja),
     accionPuerto: String(user.accionPuerto ?? ""),
-    estadoServicio: String(user.estadoServicio ?? "active")
+    estadoServicio: String(user.estadoServicio ?? "active"),
+    suspendidoDesde: String(user.suspendidoDesde ?? "")
   }));
   return updateDoc(doc(firestore, "cajasVerificadas", id), { cedulas, actualizadoEn: serverTimestamp() });
 }
@@ -200,9 +203,30 @@ export function createClient({ nombre, cedula, user }) {
   const cleanName = String(nombre || "").trim();
   const cleanId = String(cedula || "").trim();
   if (!cleanName || !cleanId) return Promise.reject(new Error("Escribe el nombre y la cédula del cliente."));
-  return addDoc(clients, { nombre: cleanName, cedula: cleanId, cedulaNormalizada: normalizeCustomerId(cleanId), creadoPorUid: user?.uid || "", creadoPorNombre: String(user?.nombre || ""), creadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
+  return addDoc(clients, { nombre: cleanName, cedula: cleanId, cedulaNormalizada: normalizeCustomerId(cleanId), plan: null, valorMensual: null, diaPago: null, diaCorte: null, fechaPago: null, fechaCorte: null, fechaGeneracionFactura: null, zona: null, creadoPorUid: user?.uid || "", creadoPorNombre: String(user?.nombre || ""), creadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
 }
 export function subscribeClients(onChange, onError) { return onSnapshot(clients, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+function cleanClientProfile(data = {}) {
+  const cleanDay = value => {
+    if (value === "" || value === null || value === undefined) return null;
+    const day = Number(value);
+    return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
+  };
+  const profile = {};
+  if (Object.hasOwn(data, "plan")) profile.plan = String(data.plan || "").trim() || null;
+  if (Object.hasOwn(data, "valorMensual")) {
+    const monthly = data.valorMensual === "" || data.valorMensual === null || data.valorMensual === undefined ? null : Number(data.valorMensual);
+    profile.valorMensual = Number.isFinite(monthly) && monthly >= 0 ? monthly : null;
+  }
+  if (Object.hasOwn(data, "diaPago")) profile.diaPago = cleanDay(data.diaPago);
+  if (Object.hasOwn(data, "diaCorte")) profile.diaCorte = cleanDay(data.diaCorte);
+  for (const key of ["fechaPago", "fechaCorte", "fechaGeneracionFactura"]) if (Object.hasOwn(data, key)) { const value = String(data[key] || "").trim(); profile[key] = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null; }
+  if (Object.hasOwn(data, "zona")) profile.zona = String(data.zona || "").trim() || null;
+  return profile;
+}
+export function updateClientProfile(id, profile) {
+  return updateDoc(doc(firestore, "clientes", id), { ...cleanClientProfile(profile), actualizadoEn: serverTimestamp() });
+}
 export function subscribeClientProcesses(onChange, onError) { return onSnapshot(clientProcesses, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 export function createClientProcess({ client, type, user }) {
   const stepsByType = {
@@ -249,6 +273,19 @@ export function updateClientProcess(id, { informacion, pasos, pasosVerificados, 
   if (completadoEn !== undefined) changes.completadoEn = completadoEn;
   return updateDoc(doc(firestore, "procesosClientes", id), changes);
 }
+export function completeClientProfileStep({ clientId, processId, profile, informacion, pasos, pasosVerificados, estado }) {
+  const batch = writeBatch(firestore);
+  batch.update(doc(firestore, "clientes", clientId), { ...cleanClientProfile(profile), actualizadoEn: serverTimestamp() });
+  batch.update(doc(firestore, "procesosClientes", processId), {
+    informacion: cleanProcessInformation(informacion),
+    pasos: Array.from(pasos || [], step => String(step)),
+    pasosVerificados: Array.from(pasosVerificados || [], step => Number(step)),
+    estado,
+    ...(estado === "completado" ? { completadoEn: serverTimestamp() } : { completadoEn: null }),
+    actualizadoEn: serverTimestamp()
+  });
+  return batch.commit();
+}
 export function deleteClientProcess(id) { return deleteDoc(doc(firestore, "procesosClientes", id)); }
 export function subscribePublicSupportConfig(onChange, onError) { return onSnapshot(publicSupportConfig, snapshot => onChange(snapshot.exists() ? snapshot.data() : null), onError); }
 export function savePublicSupportConfig(value) {
@@ -270,9 +307,9 @@ export function savePublicSupportConfig(value) {
 export function subscribeAdjustmentZones(onChange, onError) { return onSnapshot(adjustmentZonesConfig, snapshot => onChange(snapshot.exists() ? snapshot.data().zonas || [] : []), onError); }
 export function saveAdjustmentZones(zones) {
   const cleanZones = Array.from(zones || [], zone => ({ nombre: String(zone.nombre || "").trim(), valor: Number(zone.valor) }))
-    .filter(zone => zone.nombre && [15000, 20000].includes(zone.valor));
+    .filter(zone => zone.nombre && Number.isFinite(zone.valor) && zone.valor > 0);
   return setDoc(adjustmentZonesConfig, { zonas: cleanZones, actualizadoEn: serverTimestamp() });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, findClientByCedula, createClient, subscribeClients, subscribeClientProcesses, createClientProcess, updateClientProcess, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

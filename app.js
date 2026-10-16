@@ -23,6 +23,7 @@ const state = {
   pendingInvoiceId: null,
   pendingInvoiceDraft: null,
   pendingVerifiedBoxEditId: null,
+  pendingBoxVerification: null,
   pendingClientId: null,
   pendingClientProcessType: "",
   invoiceNotifications: [],
@@ -81,11 +82,15 @@ function isSystemAdminAccount(user = state.currentUser) {
 function canViewSection(sectionId) {
   const section = state.sections.find(item => item.id === sectionId);
   if (!section) return false;
-  if (!section.requiresAuth || state.systemAdmin) return true;
+  if (section.inheritsPermissionsFrom) return canViewSection(section.inheritsPermissionsFrom);
+  if (sectionId === "clientes") return Boolean(state.currentUser && state.advisorProfile);
+  if (!section.requiresAuth || state.systemAdmin || state.advisorProfile?.rol === "administrador") return true;
   return Boolean(state.currentUser && state.advisorProfile && state.sectionPermissions?.[sectionId]?.ver === true);
 }
 
 function renderSidebar() {
+  const startClientProcess = $("#startClientProcess");
+  if (startClientProcess) startClientProcess.hidden = !(state.currentUser && state.advisorProfile);
   const publicList = $("#sectionList");
   const protectedList = $("#protectedSectionList");
   const personalList = $("#personalNavList");
@@ -133,7 +138,7 @@ function renderSidebar() {
     workspaceRole.classList.toggle("is-admin", canOpenAdminPanel);
     workspaceRole.setAttribute("aria-disabled", String(!canOpenAdminPanel));
     workspaceRole.tabIndex = canOpenAdminPanel ? 0 : -1;
-    if (canOpenAdminPanel) workspaceRole.href = "admin/";
+    if (canOpenAdminPanel) workspaceRole.href = "admin/index.html";
     else workspaceRole.removeAttribute("href");
   }
   if (account) {
@@ -462,7 +467,7 @@ function renderSettings() {
         <div class="support-config-actions"><p id="supportConfigStatus" role="status" aria-live="polite"></p><button class="primary-button" id="saveSupportConfig" type="submit">Guardar configuración</button></div>
       </form>
     </section>
-    ${state.currentUser && (state.systemAdmin || state.advisorProfile?.rol === "administrador") ? `<section class="panel settings-team-panel"><div class="panel-header"><div><h3>Zonas y reajustes</h3><span>Configura el valor que se debe cobrar por zona. Escribe una zona por línea con el formato: nombre | valor.</span></div></div><form class="panel-body" id="adjustmentZonesForm"><label class="account-security-form">Zonas de reajuste<textarea id="adjustmentZonesInput" rows="8" placeholder="Centro | 15000&#10;Zona especial | 20000"></textarea></label><small id="adjustmentZonesStatus" class="inline-status" role="status">${escapeHtml(state.adjustmentZonesError)}</small><div class="support-config-actions"><p></p><button class="primary-button" id="saveAdjustmentZones" type="submit">Guardar zonas</button></div></form></section>` : ""}
+    ${state.currentUser && (state.systemAdmin || state.advisorProfile?.rol === "administrador") ? `<section class="panel settings-team-panel"><div class="panel-header"><div><h3>Zonas y reajustes</h3><span>Solo administradores pueden crear o modificar zonas. Escribe una por línea: nombre | valor. Los demás asesores podrán seleccionarlas en la ficha del cliente y los procesos.</span></div></div><form class="panel-body" id="adjustmentZonesForm"><label class="account-security-form">Zonas de reajuste<textarea id="adjustmentZonesInput" rows="8" placeholder="Valledupar | 15000&#10;Pueblo Bello | 20000&#10;Riohacha | 15000"></textarea></label><small id="adjustmentZonesStatus" class="inline-status" role="status">${escapeHtml(state.adjustmentZonesError)}</small><div class="support-config-actions"><p></p><button class="primary-button" id="saveAdjustmentZones" type="submit">Guardar zonas</button></div></form></section>` : ""}
   `;
   populateSupportConfigForm();
   $("#supportConfigForm").addEventListener("input", event => { event.currentTarget.dataset.dirty = "true"; });
@@ -493,9 +498,11 @@ async function saveAdjustmentZones(event) {
   const zones = $("#adjustmentZonesInput").value.split(/\r?\n/).map(line => {
     const [nombre, rawValue] = line.split("|");
     return { nombre: String(nombre || "").trim(), valor: Number(String(rawValue || "").replace(/[^0-9]/g, "")) };
-  }).filter(zone => zone.nombre && [15000, 20000].includes(zone.valor));
-  if (!zones.length) { status.textContent = "Agrega al menos una zona con valor 15000 o 20000."; return; }
-  if (zones.length !== $("#adjustmentZonesInput").value.split(/\r?\n/).filter(line => line.trim()).length) { status.textContent = "Cada línea debe tener el formato Nombre de zona | 15000 o 20000."; return; }
+  }).filter(zone => zone.nombre && Number.isFinite(zone.valor) && zone.valor > 0);
+  const rawLines = $("#adjustmentZonesInput").value.split(/\r?\n/).filter(line => line.trim());
+  if (!zones.length) { status.textContent = "Agrega al menos una zona con un valor mayor que $0."; return; }
+  if (zones.length !== rawLines.length) { status.textContent = "Cada línea debe tener el formato Nombre de zona | valor (por ejemplo, Valledupar | 15000)."; return; }
+  if (new Set(zones.map(zone => zone.nombre.toLocaleLowerCase("es"))).size !== zones.length) { status.textContent = "Cada zona debe aparecer una sola vez."; return; }
   button.disabled = true; button.textContent = "Guardando…"; status.textContent = "Guardando catálogo de zonas…";
   try {
     await window.INTERCOL_FIREBASE.saveAdjustmentZones(zones);
@@ -597,6 +604,47 @@ function openSection(id) {
   $("#topbarBackToSections").onclick = () => setView("sections");
   const frame = $("#sectionFrame");
   frame.addEventListener("load", () => {
+    let resizeScheduled = false;
+    const resizeFrame = () => {
+      if (resizeScheduled) return;
+      resizeScheduled = true;
+      requestAnimationFrame(() => {
+        resizeScheduled = false;
+      try {
+        const doc = frame.contentDocument;
+        if (!doc) return;
+        const contentHeight = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight || 0);
+        if (contentHeight > 0 && Math.abs(frame.getBoundingClientRect().height - contentHeight) > 2) {
+          frame.style.height = `${contentHeight}px`;
+        }
+      } catch (error) { console.warn("No se pudo ajustar la altura de la sección:", error); }
+      });
+    };
+    try {
+      const doc = frame.contentDocument;
+      const moduleRoot = doc?.body?.firstElementChild;
+      const moduleHeading = moduleRoot?.querySelector(":scope > header");
+      const moduleTitle = moduleHeading?.querySelector("h1");
+      if (moduleTitle) {
+        const titleBlock = moduleTitle.parentElement;
+        titleBlock?.remove();
+        if (moduleHeading && !moduleHeading.children.length && !moduleHeading.textContent.trim()) moduleHeading.remove();
+      }
+      if (doc && !doc.getElementById("intercol-full-width-section")) {
+        const style = doc.createElement("style");
+        style.id = "intercol-full-width-section";
+        style.textContent = "html,body{min-height:0!important;height:auto!important;overflow-y:hidden!important;background-color:var(--bg)!important}body>:first-child{max-width:none!important;width:100%!important;margin-left:0!important;margin-right:0!important}";
+        doc.head.append(style);
+      }
+      const observer = new ResizeObserver(resizeFrame);
+      observer.observe(doc.documentElement);
+      if (doc.body) observer.observe(doc.body);
+      frame._sectionResizeObserver = observer;
+      frame.contentWindow.addEventListener("resize", resizeFrame);
+    } catch (error) { console.warn("No se pudo expandir el contenido de la sección:", error); }
+    resizeFrame();
+    setTimeout(resizeFrame, 150);
+    setTimeout(resizeFrame, 600);
     broadcastTheme();
     frame.contentWindow.postMessage({ type: "INTERCOL_AUTH_STATE", user: state.currentUser ? { uid: state.currentUser.uid } : null, profile: state.advisorProfile, permissions: state.sectionPermissions, isAdmin: state.systemAdmin }, "*");
     if (state.activeSectionId === "notificaciones-pago" && state.pendingInvoiceId) {
@@ -610,6 +658,10 @@ function openSection(id) {
     if (state.activeSectionId === "verificar-caja" && state.pendingVerifiedBoxEditId) {
       frame.contentWindow.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: state.pendingVerifiedBoxEditId }, "*");
       state.pendingVerifiedBoxEditId = null;
+    }
+    if (state.activeSectionId === "verificar-caja" && state.pendingBoxVerification) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_PREFILL_NEW_VERIFICATION", box: state.pendingBoxVerification }, "*");
+      state.pendingBoxVerification = null;
     }
     sendPendingClientProcess(frame);
     frame.contentWindow.scrollTo(0, 0);
@@ -665,11 +717,16 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_OPEN_VERIFIED_BOXES") {
-    openSection("cajas-verificadas");
+    openSection("cajas");
     return;
   }
   if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_EDIT_VERIFIED_BOX") {
     state.pendingVerifiedBoxEditId = String(event.data.id || "");
+    openSection("verificar-caja");
+    return;
+  }
+  if (frame && event.source === frame.contentWindow && event.data?.type === "INTERCOL_START_BOX_VERIFICATION") {
+    state.pendingBoxVerification = event.data.box || null;
     openSection("verificar-caja");
     return;
   }
@@ -714,6 +771,10 @@ window.addEventListener("message", (event) => {
     if (state.activeSectionId === "verificar-caja" && state.pendingVerifiedBoxEditId) {
       frame.contentWindow.postMessage({ type: "INTERCOL_EDIT_VERIFIED_BOX", id: state.pendingVerifiedBoxEditId }, "*");
       state.pendingVerifiedBoxEditId = null;
+    }
+    if (state.activeSectionId === "verificar-caja" && state.pendingBoxVerification) {
+      frame.contentWindow.postMessage({ type: "INTERCOL_PREFILL_NEW_VERIFICATION", box: state.pendingBoxVerification }, "*");
+      state.pendingBoxVerification = null;
     }
     sendPendingClientProcess(frame);
   }
@@ -942,7 +1003,7 @@ function startAdjustmentZonesSync() {
   const firebase = window.INTERCOL_FIREBASE;
   if (!firebase?.subscribeAdjustmentZones || stopAdjustmentZonesSync) return;
   stopAdjustmentZonesSync = firebase.subscribeAdjustmentZones(zones => {
-    if (Array.isArray(zones) && zones.length) state.adjustmentZones = zones.filter(zone => zone?.nombre && [15000, 20000].includes(Number(zone.valor)));
+    if (Array.isArray(zones) && zones.length) state.adjustmentZones = zones.filter(zone => zone?.nombre && Number.isFinite(Number(zone.valor)) && Number(zone.valor) > 0);
     populateAdjustmentZonesForm();
   }, error => {
     console.error("No se pudo cargar el catálogo de zonas:", error);

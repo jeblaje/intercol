@@ -26,7 +26,7 @@ service cloud.firestore {
             && get(rolePath).data.permisos.panelAdmin.get(sectionId, false) == true));
     }
     function sectionUsesRoles(sectionId) {
-      return !(sectionId in ['mensajes-temporales', 'utilidades', 'cajas-verificadas', 'reporte-servicio']);
+      return !(sectionId in ['mensajes-temporales', 'utilidades', 'reporte-servicio']);
     }
     function advisorRoleAllows(roleId, sectionId, action) {
       let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
@@ -79,13 +79,13 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /cajasVerificadas/{boxId} {
-      allow read: if true;
+      allow read: if isRegisteredAdvisor();
       allow create: if signedIn() && hasSectionPermission('verificar-caja', 'crear')
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
         && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn']);
-      allow update: if signedIn() && hasSectionPermission('cajas-verificadas', 'editar')
+      allow update: if signedIn() && hasSectionPermission('verificar-caja', 'editar')
         && (isSystemAdmin() || hasAdministratorRole() || resource.data.asesorUid == request.auth.uid);
-      allow delete: if signedIn() && hasSectionPermission('cajas-verificadas', 'eliminar')
+      allow delete: if signedIn() && hasSectionPermission('verificar-caja', 'eliminar')
         && (isSystemAdmin() || hasAdministratorRole() || resource.data.asesorUid == request.auth.uid);
     }
     match /asesores/{advisorUid} {
@@ -161,7 +161,8 @@ service cloud.firestore {
         && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid);
       allow create: if signedIn() && hasSectionPermission('notificaciones-pago', 'crear')
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
-        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'fechaNotificacion', 'diaPago', 'asesorUid', 'asesor', 'revisado', 'revisadoEn', 'revisadoPor', 'creadoEn', 'actualizadoEn']);
+        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'fechaNotificacion', 'diaPago', 'processId', 'asesorUid', 'asesor', 'revisado', 'revisadoEn', 'revisadoPor', 'creadoEn', 'actualizadoEn'])
+        && (request.resource.data.get('processId', null) == null || request.resource.data.processId is string);
       allow update: if signedIn() && hasSectionPermission('notificaciones-pago', 'editar')
         && (isSystemAdmin() || resource.data.asesorUid == request.auth.uid)
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid);
@@ -181,13 +182,31 @@ service cloud.firestore {
     match /clientes/{clientId} {
       allow read: if isRegisteredAdvisor();
       allow create: if isRegisteredAdvisor()
-        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'cedulaNormalizada', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
+        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'cedulaNormalizada', 'plan', 'valorMensual', 'diaPago', 'diaCorte', 'fechaPago', 'fechaCorte', 'fechaGeneracionFactura', 'zona', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
         && request.resource.data.keys().hasAll(['nombre', 'cedula', 'cedulaNormalizada', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
         && request.resource.data.nombre is string
         && request.resource.data.cedula is string
         && request.resource.data.cedulaNormalizada is string
-        && request.resource.data.creadoPorUid == request.auth.uid;
-      allow update, delete: if false;
+        && request.resource.data.creadoPorUid == request.auth.uid
+        && (request.resource.data.get('plan', null) == null || request.resource.data.plan is string)
+        && (request.resource.data.get('valorMensual', null) == null || (request.resource.data.valorMensual is number && request.resource.data.valorMensual >= 0))
+        && (request.resource.data.get('diaPago', null) == null || (request.resource.data.diaPago is int && request.resource.data.diaPago >= 1 && request.resource.data.diaPago <= 31))
+        && (request.resource.data.get('diaCorte', null) == null || (request.resource.data.diaCorte is int && request.resource.data.diaCorte >= 1 && request.resource.data.diaCorte <= 31))
+        && (request.resource.data.get('zona', null) == null || request.resource.data.zona is string)
+        && (request.resource.data.get('fechaPago', null) == null || request.resource.data.fechaPago is string)
+        && (request.resource.data.get('fechaCorte', null) == null || request.resource.data.fechaCorte is string)
+        && (request.resource.data.get('fechaGeneracionFactura', null) == null || request.resource.data.fechaGeneracionFactura is string);
+      allow update: if isRegisteredAdvisor()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan', 'valorMensual', 'diaPago', 'diaCorte', 'fechaPago', 'fechaCorte', 'fechaGeneracionFactura', 'zona', 'actualizadoEn'])
+        && (request.resource.data.get('plan', null) == null || request.resource.data.plan is string)
+        && (request.resource.data.get('valorMensual', null) == null || (request.resource.data.valorMensual is number && request.resource.data.valorMensual >= 0))
+        && (request.resource.data.get('diaPago', null) == null || (request.resource.data.diaPago is int && request.resource.data.diaPago >= 1 && request.resource.data.diaPago <= 31))
+        && (request.resource.data.get('diaCorte', null) == null || (request.resource.data.diaCorte is int && request.resource.data.diaCorte >= 1 && request.resource.data.diaCorte <= 31))
+        && (request.resource.data.get('zona', null) == null || request.resource.data.zona is string)
+        && (request.resource.data.get('fechaPago', null) == null || request.resource.data.fechaPago is string)
+        && (request.resource.data.get('fechaCorte', null) == null || request.resource.data.fechaCorte is string)
+        && (request.resource.data.get('fechaGeneracionFactura', null) == null || request.resource.data.fechaGeneracionFactura is string);
+      allow delete: if false;
     }
     match /procesosClientes/{processId} {
       allow read: if isRegisteredAdvisor();

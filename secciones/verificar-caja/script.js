@@ -34,6 +34,8 @@ let pendingVerifiedBoxEditId = null;
 let portAutosaveTimer = null;
 let portAutosaveDirty = false;
 let portAutosaveQueue = Promise.resolve();
+let lastPrefilledBoxKey = "";
+let newVerificationFromHistory = false;
 const onuUrl = cedula => `https://intercolwisp.smartolt.com/onu/configured?free_text=${encodeURIComponent(cedula)}&sort_by=id&sort_order=desc`;
 const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponent(cedula)}@cibercitywisp/#set1`;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -42,6 +44,7 @@ const portActionFor = user => user?.portAction || (user?.orangeBackground ? "can
 const serviceStatusFor = user => user?.serviceStatus || user?.estadoServicio || (portActionFor(user) === "cancelled" ? "cancelled" : portActionFor(user) === "notRegistered" ? "notRegistered" : "active");
 const serviceStatusText = status => ({ active: "ACTIVO", suspended: "SUSPENDIDO", cancelled: "CANCELADO", notRegistered: "NO REGISTRA" }[status] || "ACTIVO");
 const serviceStatusClass = status => ({ active: "service-active", suspended: "service-suspended", cancelled: "service-cancelled", notRegistered: "service-not-registered" }[status] || "service-active");
+const suspensionDays = value => { const date = /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? new Date(`${value}T12:00:00`) : null; return date && Number.isFinite(date.getTime()) ? Math.max(0, Math.floor((new Date(`${todayIsoDate()}T12:00:00`) - date) / 86400000)) : null; };
 const portActionText = action => ({
   cancelled: "SE TOMA PUERTO CANCELADO",
   splitter: "SE COLOCA SPLITTER",
@@ -86,6 +89,7 @@ function syncVerifiedBoxes() {
     verifiedCount.textContent = `${verifiedBoxes.length} caja${verifiedBoxes.length === 1 ? "" : "s"}`;
     verifiedStatus.textContent = verifiedBoxes.length ? "Selecciona una caja para consultar su ficha." : "Aún no hay cajas verificadas.";
     renderVerifiedBoxes();
+    if (boxForm.elements.boxNumber.value.trim() && !lastPrefilledBoxKey) lookupExistingBox();
     const selectedBox = verifiedBoxes.find(box => box.id === verifiedDetail.dataset.boxId);
     if (selectedBox) showVerifiedBox(selectedBox);
     if (pendingVerifiedBoxEditId) {
@@ -183,7 +187,8 @@ function beginVerifiedBoxEdit(box) {
     comment: String(user.comentario || ""),
     orangeBackground: Boolean(user.fondoNaranja),
     portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : ""),
-    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active")
+    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active"),
+    suspendidoDesde: String(user.suspendidoDesde || "")
   })));
   selectedId = users[0]?.id || null;
   editingVerifiedBoxId = box.id;
@@ -256,7 +261,8 @@ function persistPortChanges() {
     comentario: String(user.comment || ""),
     fondoNaranja: Boolean(user.orangeBackground),
     accionPuerto: portActionFor(user),
-    estadoServicio: serviceStatusFor(user)
+    estadoServicio: serviceStatusFor(user),
+    suspendidoDesde: String(user.suspendidoDesde || "")
   }));
   portAutosaveDirty = false;
   portAutosaveQueue = portAutosaveQueue.then(() => firebase.updateVerifiedBoxPorts(boxId, portData)).then(() => {
@@ -290,13 +296,20 @@ function restoreBoxDraft() {
       listOrder: Number.isInteger(Number(user.listOrder)) && Number(user.listOrder) > 0 ? Number(user.listOrder) : index + 1,
       orangeBackground: Boolean(user.orangeBackground),
       portAction: user.portAction || (user.orangeBackground ? "cancelled" : ""),
-      serviceStatus: user.serviceStatus || (user.portAction === "cancelled" || user.orangeBackground ? "cancelled" : user.portAction === "notRegistered" ? "notRegistered" : "active")
+      serviceStatus: user.serviceStatus || (user.portAction === "cancelled" || user.orangeBackground ? "cancelled" : user.portAction === "notRegistered" ? "notRegistered" : "active"),
+      suspendidoDesde: String(user.suspendidoDesde || "")
     })));
     selectedId = users.some(user => user.id === draft.selectedId) ? draft.selectedId : users[0]?.id || null;
   } catch { /* Ignore an invalid saved draft and start a fresh form. */ }
 }
 
 const dateField = document.querySelector("#boxDate");
+const boxLookupStatus = document.querySelector("#boxLookupStatus");
+function setBoxLookupStatus(message, state = "") {
+  boxLookupStatus.textContent = message;
+  boxLookupStatus.classList.toggle("is-latest", state === "latest");
+  boxLookupStatus.classList.toggle("is-new", state === "new");
+}
 const today = new Date();
 dateField.value = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 restoreBoxDraft();
@@ -307,9 +320,86 @@ function updateStatus() {
   statusText.textContent = ready ? `${data.boxType.toUpperCase()} · ${users.length} cédula${users.length === 1 ? "" : "s"}` : "Completa los datos de la caja";
   markBoxVerifiedButton.disabled = !ready || !users.length;
   markBoxVerifiedButton.textContent = editingVerifiedBoxId ? "Guardar cambios" : "Caja verificada";
-  cancelBoxEditButton.hidden = !editingVerifiedBoxId;
+  cancelBoxEditButton.hidden = !(editingVerifiedBoxId || newVerificationFromHistory);
+  cancelBoxEditButton.textContent = editingVerifiedBoxId ? "Cancelar edición" : "Cancelar verificación";
   updateSheetRows();
   saveBoxDraft();
+}
+
+function normalizedBoxNumber(value) {
+  return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+}
+
+function todayIsoDate() {
+  const current = new Date();
+  return new Date(current.getTime() - current.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function hasBoxDraftData() {
+  const data = boxData();
+  return Boolean(users.length || data.address.trim() || data.technician.trim() || data.link.trim());
+}
+
+function applyLatestVerification(box, { confirmReplace = false } = {}) {
+  if (!box || !box.numeroCaja) return false;
+  const key = normalizedBoxNumber(box.numeroCaja);
+  if (key && key === lastPrefilledBoxKey) return true;
+  if (confirmReplace && hasBoxDraftData() && !window.confirm(`Ya hay datos en el formulario. ¿Quieres cargar la última verificación de la caja ${box.numeroCaja} y reemplazarlos?`)) return false;
+  resetBoxForm();
+  const fields = boxForm.elements;
+  fields.date.value = todayIsoDate();
+  Array.from(fields.boxType).forEach(input => { input.checked = input.value === box.tipoCaja; });
+  fields.boxNumber.value = String(box.numeroCaja || "");
+  fields.address.value = String(box.direccion || "");
+  fields.technician.value = String(box.tecnico || "");
+  fields.advisor.value = String(advisorAuth.profile?.asesor || advisorAuth.profile?.nombre || box.asesor || "");
+  fields.link.value = String(box.link || "");
+  users.splice(0, users.length, ...(Array.isArray(box.cedulas) ? box.cedulas : []).map((user, index) => ({
+    id: `previous-${box.id || key}-${index}`,
+    cedula: String(user.cedula || ""),
+    port: Number(user.puertoReal) || Number(user.puertoTecnico) || index + 1,
+    listOrder: Number(user.puertoTecnico) || index + 1,
+    comment: String(user.comentario || ""),
+    orangeBackground: Boolean(user.fondoNaranja),
+    portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : ""),
+    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active"),
+    suspendidoDesde: String(user.suspendidoDesde || "")
+  })));
+  selectedId = null;
+  editingVerifiedBoxId = null;
+  lastPrefilledBoxKey = key;
+  newVerificationFromHistory = true;
+  cancelBoxEditButton.hidden = false;
+  cancelBoxEditButton.textContent = "Cancelar verificación";
+  markBoxVerifiedButton.textContent = "Caja verificada";
+  copyStatus.textContent = `Nueva verificación basada en la del ${formatBoxDate(box.fecha)}. Actualiza solo lo que cambió; el historial anterior se conserva.`;
+  setBoxLookupStatus(`Fecha: ${formatBoxDate(box.fecha)} · La realizó: ${box.tecnico || "Sin registrar"}. Se cargaron sus datos para iniciar esta nueva verificación.`, "latest");
+  if (users.length) selectUser(users[0].id); else renderList();
+  updateStatus();
+  boxForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  return true;
+}
+
+function findLatestVerification(number) {
+  const key = normalizedBoxNumber(number);
+  if (!key || ["sinnumero", "nonumero", "na"].includes(key)) return null;
+  return verifiedBoxes.filter(box => normalizedBoxNumber(box.numeroCaja) === key).sort((a, b) => timestampMillis(b.creadoEn) - timestampMillis(a.creadoEn) || String(b.fecha || "").localeCompare(String(a.fecha || "")))[0] || null;
+}
+
+function lookupExistingBox() {
+  if (editingVerifiedBoxId) return;
+  const number = boxForm.elements.boxNumber.value.trim();
+  if (!number) { lastPrefilledBoxKey = ""; setBoxLookupStatus("Al escribir un número guardado, se cargarán los datos de la última verificación."); return; }
+  const latest = findLatestVerification(number);
+  if (!latest) {
+    if (lastPrefilledBoxKey && normalizedBoxNumber(number) !== lastPrefilledBoxKey) {
+      if (!window.confirm(`No existe la caja ${number}. ¿Quieres limpiar los datos de la caja anterior y empezar un registro nuevo?`)) return;
+      resetBoxForm(); boxForm.elements.boxNumber.value = number;
+      updateStatus();
+    }
+    lastPrefilledBoxKey = ""; setBoxLookupStatus("No encontramos esta caja; al guardar se registrará como caja nueva.", "new"); return;
+  }
+  if (applyLatestVerification(latest, { confirmReplace: true })) setBoxLookupStatus(`Fecha: ${formatBoxDate(latest.fecha)} · La realizó: ${latest.tecnico || "Sin registrar"}. Se cargaron sus datos para iniciar esta nueva verificación.`, "latest");
 }
 
 async function saveVerifiedBox() {
@@ -349,7 +439,8 @@ async function saveVerifiedBox() {
         comentario: String(user.comment || ""),
         fondoNaranja: false,
         accionPuerto: portActionFor(user),
-        estadoServicio: serviceStatusFor(user)
+        estadoServicio: serviceStatusFor(user),
+        suspendidoDesde: String(user.suspendidoDesde || "")
       }))
     };
     if (editingVerifiedBoxId) {
@@ -380,6 +471,7 @@ async function saveVerifiedBox() {
 
 function resetBoxForm() {
   window.clearTimeout(portAutosaveTimer); portAutosaveTimer = null; portAutosaveDirty = false;
+  lastPrefilledBoxKey = ""; newVerificationFromHistory = false;
   boxForm.reset();
   const resetToday = new Date();
   dateField.value = new Date(resetToday.getTime() - resetToday.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -396,6 +488,7 @@ function resetBoxForm() {
   updateStatus();
   updatePortAnnotation();
   copyStatus.textContent = "Los datos de la caja se limpiaron. Puedes registrar la siguiente.";
+  setBoxLookupStatus("Al escribir un número guardado, se cargarán los datos de la última verificación.");
 }
 
 function cleanCell(value) {
@@ -470,6 +563,9 @@ function startIdentityEdit(id) {
       error.textContent = "Esa cédula ya está registrada en esta caja.";
       return;
     }
+    if (identity !== user.cedula && serviceStatusFor(user) === "cancelled") {
+      user.portAction = ""; user.orangeBackground = false; user.comment = ""; user.serviceStatus = "active"; user.suspendidoDesde = "";
+    }
     user.cedula = identity;
     selectedId = user.id;
     saveBoxDraft();
@@ -534,6 +630,14 @@ function selectUser(id) {
   const currentStatus = serviceStatusFor(user);
   const actionCommentClass = currentAction ? ` action-${currentAction === "addressChange" ? "address-change" : currentAction === "notRegistered" ? "not-registered" : currentAction}` : "";
   detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><fieldset class="port-control-group port-action-choices"><legend>Acción del puerto (se agrega al comentario)</legend><label class="port-action-choice neutral ${!currentAction ? "selected" : ""}"><input type="radio" name="portAction" value="" ${!currentAction ? "checked" : ""}><span>Sin acción</span></label><label class="port-action-choice cancelled ${currentAction === "cancelled" ? "selected" : ""}"><input type="radio" name="portAction" value="cancelled" ${currentAction === "cancelled" ? "checked" : ""}><span>Se toma puerto cancelado</span></label><label class="port-action-choice splitter ${currentAction === "splitter" ? "selected" : ""}"><input type="radio" name="portAction" value="splitter" ${currentAction === "splitter" ? "checked" : ""}><span>Se coloca splitter</span></label><label class="port-action-choice address-change ${currentAction === "addressChange" ? "selected" : ""}"><input type="radio" name="portAction" value="addressChange" ${currentAction === "addressChange" ? "checked" : ""}><span>Cliente cambio de dirección</span></label><label class="port-action-choice not-registered ${currentAction === "notRegistered" ? "selected" : ""}"><input type="radio" name="portAction" value="notRegistered" ${currentAction === "notRegistered" ? "checked" : ""}><span>Cliente no registra</span></label></fieldset><section class="port-editor-group comment-editor-group"><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment${actionCommentClass}" placeholder="Escribe un comentario o selecciona una acción">${escapeHtml(user.comment || "")}</textarea></section><fieldset class="port-control-group port-action-choices service-status-choices"><legend>Estado del servicio (define el color del puerto)</legend><label class="port-action-choice service-active ${currentStatus === "active" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="active" ${currentStatus === "active" ? "checked" : ""}><span>Activo</span></label><label class="port-action-choice service-suspended ${currentStatus === "suspended" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="suspended" ${currentStatus === "suspended" ? "checked" : ""}><span>Suspendido</span></label><label class="port-action-choice service-cancelled ${currentStatus === "cancelled" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="cancelled" ${currentStatus === "cancelled" ? "checked" : ""}><span>Cancelado</span></label><label class="port-action-choice service-not-registered ${currentStatus === "notRegistered" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="notRegistered" ${currentStatus === "notRegistered" ? "checked" : ""}><span>No registra</span></label></fieldset><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
+  if (currentStatus === "suspended") {
+    const days = suspensionDays(user.suspendidoDesde);
+    const suspension = document.createElement("section");
+    suspension.className = "suspension-tracking";
+    suspension.innerHTML = `<label for="suspendedSince">Desde cuándo está suspendido<input id="suspendedSince" type="date" value="${escapeHtml(user.suspendidoDesde || "")}"></label><p>${days === null ? "Registra la fecha para saber si supera los 10 días." : days > 10 ? `Lleva ${days} días suspendido; supera los 10 días.` : `Lleva ${days} ${days === 1 ? "día" : "días"} suspendido.`}</p>`;
+    detailPanel.querySelector(".user-detail").insertBefore(suspension, detailPanel.querySelector(".detail-links"));
+    suspension.querySelector("input").addEventListener("change", event => { user.suspendidoDesde = event.target.value; schedulePortAutosave(); selectUser(user.id); });
+  }
   const editForm = document.createElement("form");
   editForm.className = "record-edit-form";
   editForm.innerHTML = `<label for="editIdentity">Cédula o dirección</label><input id="editIdentity" name="identity" required value="${escapeHtml(user.cedula)}"><label for="editPort">Puerto real (1–${data.boxType === "x16" ? "16" : "8"})</label><input id="editPort" name="port" type="number" min="1" max="${data.boxType === "x16" ? "16" : "8"}" step="1" required value="${portFor(user)}"><button type="submit" class="secondary">Guardar cambios</button>`;
@@ -555,6 +659,8 @@ function selectUser(id) {
   }));
   detailPanel.querySelectorAll('input[name="serviceStatus"]').forEach(input => input.addEventListener("change", event => {
     user.serviceStatus = event.target.value;
+    if (event.target.value === "suspended") user.suspendidoDesde ||= todayIsoDate();
+    else user.suspendidoDesde = "";
     schedulePortAutosave();
     updateSheetRows();
     renderList();
@@ -595,7 +701,7 @@ userForm.addEventListener("submit", event => {
   let port = 1;
   while (occupiedPorts.has(port) && port <= maxPort) port += 1;
   if (port > maxPort) port = ((listOrder - 1) % maxPort) + 1;
-  const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false, portAction: "", serviceStatus: "active" };
+  const user = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, cedula, port, listOrder, orangeBackground: false, portAction: "", serviceStatus: "active", suspendidoDesde: "" };
   users.push(user);
   cedulaInput.value = "";
   selectUser(user.id);
@@ -685,10 +791,11 @@ async function copyFormattedBlock() {
 copySheetButton.addEventListener("click", copyFormattedBlock);
 markBoxVerifiedButton.addEventListener("click", saveVerifiedBox);
 cancelBoxEditButton.addEventListener("click", () => {
-  if (!editingVerifiedBoxId) return;
+  if (!editingVerifiedBoxId && !newVerificationFromHistory) return;
   resetBoxForm();
   copyStatus.textContent = "Edición cancelada. Puedes empezar otra caja.";
 });
+boxForm.elements.boxNumber.addEventListener("change", lookupExistingBox);
 verifiedSearch.addEventListener("input", renderVerifiedBoxes);
 verifiedType.addEventListener("change", renderVerifiedBoxes);
 document.querySelector("#openPublicVerifiedList").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_OPEN_VERIFIED_BOXES" }, "*"));
@@ -727,6 +834,7 @@ openAllOnusButton.addEventListener("click", () => {
   }
 });
 window.addEventListener("message", event => {
+  if (event.source !== window.parent) return;
   if (event.data?.type === "INTERCOL_THEME") {
     Object.entries(event.data.variables || {}).forEach(([name, value]) => document.documentElement.style.setProperty(name, value));
     document.documentElement.dataset.theme = event.data.theme || "light";
@@ -744,6 +852,10 @@ window.addEventListener("message", event => {
     if (box && canManageVerifiedBox(box)) beginVerifiedBoxEdit(box);
     else if (box) verifiedStatus.textContent = "No tienes permiso para editar esta caja.";
     else pendingVerifiedBoxEditId = id;
+  }
+  if (event.data?.type === "INTERCOL_PREFILL_NEW_VERIFICATION") {
+    const box = event.data.box;
+    if (box) applyLatestVerification(box, { confirmReplace: true });
   }
 });
 window.parent.postMessage({ type: "INTERCOL_SECTION_READY" }, "*");

@@ -4,23 +4,17 @@ const notificationsHost = $("#notificationList");
 const detailsHost = $("#clientCardPanel");
 const processNames = { reconexion: "Reconexión", "cambio-fecha-pago": "Cambio de fecha de pago", "cambio-plan": "Cambio de plan" };
 const processStepTemplates = {
-  reconexion: ["Confirmar cliente y forma de contacto", "Revisar facturas pendientes, pagos o abonos", "Consultar zona y calcular el reajuste", "Generar o ajustar la factura", "Actualizar fecha de pago o fecha de espera", "Registrar el técnico que atendió el caso", "Verificar si hubo cambio de plan", "Verificar el ticket de reconexión", "Dejar la anotación del proceso", "Programar revisión de la próxima factura", "Realizar la reconexión y confirmar el servicio"],
+  reconexion: ["Confirmar cliente y forma de contacto", "Seleccionar zona y calcular cuánto cobrar", "Verificar y ajustar las facturas pendientes", "Cambiar la fecha de pago", "Preparar anotación y programar revisión de factura"],
   "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
   "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
 };
 const processStepHelp = {
   reconexion: [
     "Registra desde dónde se comunica el cliente, su número de contacto y si desea continuar. Si había una orden de retiro, confirma que desea continuar.",
-    "Revisa cuántas facturas están pendientes, cuáles pagó el cliente y si hizo un abono. Distingue si debe el mes, el reajuste o ambos.",
-    "Escribe la zona o barrio del cliente y selecciona la tarifa de reajuste que corresponde: $15.000 o $20.000. El sistema te mostrará el valor a cobrar.",
-    "Si hay varias facturas pendientes, ajusta una con el mes más el reajuste y elimina las duplicadas. Si queda una factura solo para el reajuste, suma la comisión de $1.500. Si el cliente pagó el mes o abonó, registra el saldo pendiente y el acuerdo de pago.",
-    "Cambia la fecha de pago en la plataforma. Si el cliente pagará el reajuste después, deja registrada la fecha hasta la que queda en espera.",
-    "Si hubo una visita u orden de retiro, deja el nombre del técnico que atendió el caso. Si no aplica, marca esta tarea como completada sin técnico.",
-    "Confirma si el cliente cambió de plan y registra el plan actual cuando corresponda.",
-    "Comprueba que el ticket de reconexión exista y esté actualizado.",
-    "Anota el canal de contacto, técnico (si aplica), facturas ajustadas, valores y acuerdos de pago.",
-    "Registra cuándo se debe generar o revisar la próxima factura para hacer seguimiento.",
-    "Haz la reconexión en la plataforma y confirma con el cliente que el servicio funciona correctamente."
+    "Selecciona la zona. Se calcula el reajuste, la comisión de $1.500 y el total. Si llegó por chat, confirma la zona con el cliente.",
+    "Abre el enlace de Wisphub, verifica las facturas y selecciona la acción que realizaste. El sistema calcula el valor según corresponda.",
+    "Actualiza la fecha de pago en Wisphub y registra la fecha que quedó. El sistema calcula el corte dos días después y la generación diez días antes.",
+    "Abre el enlace de anotaciones, copia el texto preparado y marca la tarea. Programa fecha y hora para revisar la generación; se guardará en Generación de facturas."
   ]
 };
 const legacyReconnectionSteps = ["Confirmar cliente y validar su cédula", "Verificar estado del servicio y motivo de suspensión", "Realizar la reconexión en la plataforma", "Confirmar con el cliente que el servicio funciona"];
@@ -28,8 +22,10 @@ let clients = [];
 let processes = [];
 let selectedClientId = null;
 let profileMode = false;
+let editingClientProfileId = null;
 let isAuthenticated = false;
 let currentUserUid = "";
+let currentUserName = "";
 let currentUserIsAdmin = false;
 let stopClientsSync = null;
 let stopProcessesSync = null;
@@ -74,8 +70,23 @@ function elapsed(value) {
 function clientName(client) { return String(client.nombre || "Cliente sin nombre"); }
 function processTypeLabel(type) { return processNames[type] || "Proceso"; }
 function getProcessSteps(item) {
-  if (item.tipo === "reconexion" && (!Array.isArray(item.pasosVerificados) || item.pasosVerificados.length === 0) && Array.isArray(item.pasos) && item.pasos.length === legacyReconnectionSteps.length && item.pasos.every((step, index) => step === legacyReconnectionSteps[index])) return processStepTemplates.reconexion;
+  if (item.tipo === "reconexion") {
+    const steps = [...processStepTemplates.reconexion];
+    steps[1] = item.informacion?.canalContacto === "Chat" ? "Consultar zona del cliente y calcular el cobro del chat" : "Confirmar zona y calcular el valor que debe cobrar";
+    return steps;
+  }
   return Array.isArray(item.pasos) && item.pasos.length ? item.pasos : processStepTemplates[item.tipo] || [];
+}
+function getCheckedProcessSteps(item) {
+  const saved = new Set(Array.isArray(item.pasosVerificados) ? item.pasosVerificados.map(Number) : []);
+  if (item.tipo !== "reconexion" || !Array.isArray(item.pasos) || item.pasos.length !== 11) return saved;
+  const migrated = new Set();
+  if (saved.has(0)) migrated.add(0);
+  if (saved.has(2)) migrated.add(1);
+  if (saved.has(1) || saved.has(3)) migrated.add(2);
+  if (saved.has(4)) migrated.add(3);
+  if (saved.has(8) && saved.has(9)) migrated.add(4);
+  return migrated;
 }
 function displayStatus() { $("#syncStatus").className = "sync-indicator ok"; $("#syncStatus").textContent = "Datos sincronizados"; }
 function displayError(error, host) {
@@ -101,6 +112,58 @@ function renderClientList() {
     clientsHost.append(button);
   });
 }
+function renderClientProfile(client, latestInformation) {
+  const savedZone = client.zona || latestInformation.zonaReconexion || "";
+  if (editingClientProfileId === client.id) {
+    const zones = [...adjustmentZones];
+    if (savedZone && !zones.some(zone => zone.nombre === savedZone)) zones.unshift({ nombre: savedZone, valor: Number(latestInformation.valorReajuste) || 0 });
+    const zoneOptions = zones.map(zone => `<option value="${escapeHtml(zone.nombre)}" ${zone.nombre === savedZone ? "selected" : ""}>${escapeHtml(zone.nombre)}</option>`).join("");
+    return `<form class="client-profile-editor" id="clientProfileForm"><label>Plan (opcional)<input name="plan" value="${escapeHtml(client.plan || "")}" placeholder="Nombre del plan"></label><label>Cuánto paga al mes<input name="valorMensual" type="number" min="0" step="100" value="${escapeHtml(client.valorMensual ?? "")}" placeholder="Valor en pesos"></label><label>Fecha de pago<input name="fechaPago" type="date" value="${escapeHtml(client.fechaPago || "")}"></label><label>Fecha de corte<input name="fechaCorte" type="date" value="${escapeHtml(client.fechaCorte || "")}"></label><label>Generación de factura<input name="fechaGeneracionFactura" type="date" value="${escapeHtml(client.fechaGeneracionFactura || "")}"></label><label>Zona<select name="zona"><option value="">Selecciona una zona</option>${zoneOptions}</select></label><div class="client-profile-editor-actions"><button class="profile-cancel-button" id="cancelClientProfile" type="button">Cancelar</button><button class="profile-save-button" type="submit">Guardar datos</button><span id="clientProfileStatus" role="status" aria-live="polite"></span></div></form>`;
+  }
+  const fields = [
+    ["Plan", client.plan || "Sin registrar"],
+    ["Pago mensual", client.valorMensual !== null && client.valorMensual !== undefined && client.valorMensual !== "" ? formatCurrency(client.valorMensual) : "Sin registrar"],
+    ["Fecha de pago", client.fechaPago || (client.diaPago ? `${client.diaPago} de cada mes` : "Sin registrar")],
+    ["Fecha de corte", client.fechaCorte || (client.diaCorte ? `${client.diaCorte} de cada mes` : "Sin registrar")],
+    ["Generación de factura", client.fechaGeneracionFactura || ""],
+    ["Zona", savedZone || "Sin registrar"],
+    ["Número de contacto", latestInformation.numeroContacto],
+    ["Medio de contacto", latestInformation.canalContacto],
+    ["Reajuste reciente", latestInformation.valorReajuste ? formatCurrency(latestInformation.valorReajuste) : ""]
+  ].filter(([, fieldValue]) => fieldValue);
+  return `<section class="client-profile-data" aria-label="Datos del cliente"><div class="client-profile-field"><span>Nombre completo</span><strong>${escapeHtml(clientName(client))}</strong></div><div class="client-profile-field"><span>Cédula</span><strong>${escapeHtml(client.cedula)}</strong></div>${fields.map(([label, fieldValue]) => `<div class="client-profile-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(fieldValue)}</strong></div>`).join("")}<div class="client-profile-field"><span>Registrado por</span><strong>${escapeHtml(client.creadoPorNombre || "Asesor")}</strong></div><div class="client-profile-field"><span>Cliente desde</span><strong>${escapeHtml(formatDate(client.creadoEn))}</strong></div></section>`;
+}
+async function saveClientProfile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const status = $("#clientProfileStatus");
+  const button = form.querySelector('[type="submit"]');
+  const client = clients.find(item => item.id === selectedClientId);
+  const monthlyValue = String(formData.get("valorMensual") || "").trim();
+  const profile = {
+    plan: String(formData.get("plan") || "").trim() || null,
+    valorMensual: monthlyValue ? Number(monthlyValue) : null,
+    fechaPago: String(formData.get("fechaPago") || "").trim() || null,
+    fechaCorte: String(formData.get("fechaCorte") || "").trim() || null,
+    fechaGeneracionFactura: String(formData.get("fechaGeneracionFactura") || "").trim() || null,
+    zona: String(formData.get("zona") || "").trim() || null
+  };
+  if (!client) return;
+  if (monthlyValue && (!Number.isFinite(profile.valorMensual) || profile.valorMensual < 0)) { status.textContent = "Escribe un valor mensual válido."; return; }
+  if ([profile.diaPago, profile.diaCorte].some(day => day && (!/^\d+$/.test(day) || Number(day) < 1 || Number(day) > 31))) { status.textContent = "El día de pago y de corte deben estar entre 1 y 31."; return; }
+  button.disabled = true; status.textContent = "Guardando ficha…";
+  try {
+    await window.parent.INTERCOL_FIREBASE.updateClientProfile(client.id, profile);
+    clients = clients.map(item => item.id === client.id ? { ...item, ...profile } : item);
+    editingClientProfileId = null;
+    renderClientDetails();
+  } catch (error) {
+    console.error("No se pudo actualizar la ficha del cliente:", error);
+    status.textContent = error?.code === "permission-denied" ? "Firebase no autorizó actualizar estos datos del cliente." : "No se pudieron guardar los datos. Revisa la conexión e inténtalo de nuevo.";
+    button.disabled = false;
+  }
+}
 function applyProfileMode() {
   $(".notifications").hidden = profileMode;
   $(".client-list-panel").hidden = profileMode;
@@ -109,14 +172,16 @@ function applyProfileMode() {
 function processCard(item, showClient = false) {
   const open = item.estado !== "completado";
   const steps = getProcessSteps(item);
-  const checked = new Set(Array.isArray(item.pasosVerificados) ? item.pasosVerificados.map(Number) : []);
+  const checked = getCheckedProcessSteps(item);
   const owner = item.iniciadoPorUid === currentUserUid;
   const canDelete = owner || currentUserIsAdmin;
   const currentStep = steps.findIndex((_, index) => !checked.has(index));
-  const progress = steps.length ? `<section class="process-timeline" aria-label="Pasos de ${escapeHtml(processTypeLabel(item.tipo))}"><div class="timeline-summary">${currentStep < 0 ? "Todos los pasos completados" : `Paso actual: ${currentStep + 1} de ${steps.length} · ${escapeHtml(steps[currentStep])}`}</div><ol>${steps.map((step, index) => { const done = checked.has(index); const current = index === currentStep; return `<li class="timeline-step ${done ? "is-done" : current ? "is-current" : "is-pending"}"><span class="timeline-marker" aria-hidden="true">${done ? "✓" : index + 1}</span><span class="timeline-step-copy"><strong>${escapeHtml(step)}</strong><small>${done ? "Completado" : current ? "Pendiente · paso actual" : "Pendiente"}</small></span></li>`; }).join("")}</ol><p class="process-save-status" role="status">${escapeHtml(processSaveErrors.get(item.id) || (owner ? "El avance se guarda al completar cada tarea." : `Solo ${item.iniciadoPorNombre || "quien inició el proceso"} puede continuarlo o editarlo.`))}</p></section>` : `<p class="empty-state">El checklist de este tipo de proceso aún no está configurado.</p>`;
+  const progress = steps.length ? `<section class="process-timeline" data-process-details="${escapeHtml(item.id)}" hidden aria-label="Pasos de ${escapeHtml(processTypeLabel(item.tipo))}"><div class="timeline-summary">${currentStep < 0 ? "Todos los pasos completados" : `Paso actual: ${currentStep + 1} de ${steps.length} · ${escapeHtml(steps[currentStep])}`}</div><ol>${steps.map((step, index) => { const done = checked.has(index); const current = index === currentStep; return `<li class="timeline-step ${done ? "is-done" : current ? "is-current" : "is-pending"}"><span class="timeline-marker" aria-hidden="true">${done ? "✓" : index + 1}</span><span class="timeline-step-copy"><strong>${escapeHtml(step)}</strong><small>${done ? "Completado" : current ? "Pendiente · paso actual" : "Pendiente"}</small></span></li>`; }).join("")}</ol><p class="process-save-status" role="status">${escapeHtml(processSaveErrors.get(item.id) || (owner ? "El avance se guarda al completar cada tarea." : `Solo ${item.iniciadoPorNombre || "quien inició el proceso"} puede continuarlo o editarlo.`))}</p></section>` : `<p class="empty-state">El checklist de este tipo de proceso aún no está configurado.</p>`;
   const continueButton = owner && open ? `<button class="continue-process-button" type="button" data-continue-process="${escapeHtml(item.id)}">Continuar</button>` : "";
   const deleteButton = canDelete ? `<button class="delete-process-button" type="button" data-delete-process="${escapeHtml(item.id)}">Eliminar proceso</button>` : "";
-  return `<article class="process-card" id="process-${escapeHtml(item.id)}"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inició: ${escapeHtml(formatDate(item.iniciadoEn))}</span><span>Por: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Lleva ${escapeHtml(elapsed(item.iniciadoEn))}` : `Finalizó: ${escapeHtml(formatDate(item.completadoEn))}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div>${progress}<div class="process-card-actions">${continueButton}${deleteButton}</div></article>`;
+  const stepSummary = steps.length ? (currentStep < 0 ? `Todas las ${steps.length} tareas terminadas` : `Tarea ${currentStep + 1} de ${steps.length}: ${steps[currentStep]}`) : "Sin tareas configuradas";
+  const detailsButton = steps.length ? `<button class="process-details-button" type="button" data-toggle-process="${escapeHtml(item.id)}" aria-expanded="false">Ver tareas</button>` : "";
+  return `<article class="process-card" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inició: ${escapeHtml(formatDate(item.iniciadoEn))}</span><span>Por: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Lleva ${escapeHtml(elapsed(item.iniciadoEn))}` : `Finalizó: ${escapeHtml(formatDate(item.completadoEn))}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div><p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
 }
 function renderNotifications() {
   const filter = $("#noticeTypeFilter").value;
@@ -126,8 +191,9 @@ function renderNotifications() {
   if (!open.length) { notificationsHost.innerHTML = `<p class="empty-state">No hay procesos pendientes${filter === "all" ? "" : " para este tipo"}.</p>`; return; }
   open.forEach(item => {
     const article = document.createElement("article"); article.className = "notification-card";
-    article.innerHTML = `<div><strong>${escapeHtml(processTypeLabel(item.tipo))} · ${escapeHtml(item.clienteNombre || "Cliente")}</strong><span>Cédula: ${escapeHtml(item.clienteCedula || "—")} · Inició ${escapeHtml(formatDate(item.iniciadoEn))}</span><time>Lleva ${escapeHtml(elapsed(item.iniciadoEn))} abierto · ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</time></div><button type="button">Ver ficha</button>`;
-    article.querySelector("button").addEventListener("click", () => { selectClient(item.clienteId); window.scrollTo({ top: document.querySelector(".clients-layout").offsetTop, behavior: "smooth" }); });
+    const owner = item.iniciadoPorUid === currentUserUid;
+    article.innerHTML = `<div><strong>${escapeHtml(processTypeLabel(item.tipo))} · ${escapeHtml(item.clienteNombre || "Cliente")}</strong><span>Cédula: ${escapeHtml(item.clienteCedula || "—")} · Inició ${escapeHtml(formatDate(item.iniciadoEn))}</span><time>Lleva ${escapeHtml(elapsed(item.iniciadoEn))} abierto · ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</time></div>${owner ? `<button type="button" data-resume-notification="${escapeHtml(item.id)}">Continuar</button>` : ""}`;
+    article.querySelector("[data-resume-notification]")?.addEventListener("click", () => openProcessWizard(item.id));
     notificationsHost.append(article);
   });
 }
@@ -140,12 +206,24 @@ function renderClientDetails() {
   const filterType = $("#clientProcessTypeFilter")?.value || "all";
   const filterStatus = $("#clientProcessStatusFilter")?.value || "all";
   const items = processes.filter(item => item.clienteId === client.id && (filterType === "all" || item.tipo === filterType) && (filterStatus === "all" || item.estado === filterStatus)).sort((a, b) => (timestampDate(b.iniciadoEn)?.getTime() || 0) - (timestampDate(a.iniciadoEn)?.getTime() || 0));
-  detailsHost.innerHTML = `<div class="client-detail"><header class="client-detail-heading"><div><button class="back-to-client-list" id="backToClientList" type="button">← Volver a clientes</button><span class="eyebrow">FICHA DEL CLIENTE</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula)}</p></div><button id="startAnotherProcess" type="button">＋ Iniciar proceso nuevo</button></header><div class="client-meta"><span>Registrado por: ${escapeHtml(client.creadoPorNombre || "Asesor")}</span><span>Creado: ${escapeHtml(formatDate(client.creadoEn))}</span></div><section class="client-processes"><h3>Procesos del cliente</h3><div class="process-filter-row"><select id="clientProcessTypeFilter" aria-label="Filtrar por tipo"><option value="all">Todos los procesos</option><option value="reconexion">Reconexión</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select><select id="clientProcessStatusFilter" aria-label="Filtrar por estado"><option value="all">Todos los estados</option><option value="en_curso">En curso</option><option value="completado">Completados</option></select></div><div class="process-list">${items.length ? items.map(item => processCard(item)).join("") : `<p class="empty-state">Este cliente todavía no tiene procesos con esos filtros.</p>`}</div></section></div>`;
+  const clientProcesses = processes.filter(item => item.clienteId === client.id);
+  const latestInformation = clientProcesses.reduce((latest, item) => !latest || (timestampDate(item.actualizadoEn)?.getTime() || timestampDate(item.iniciadoEn)?.getTime() || 0) > (timestampDate(latest.actualizadoEn)?.getTime() || timestampDate(latest.iniciadoEn)?.getTime() || 0) ? item : latest, null)?.informacion || {};
+  detailsHost.innerHTML = `<div class="client-detail"><header class="client-detail-heading"><div><button class="back-to-client-list" id="backToClientList" type="button">← Volver a clientes</button><span class="eyebrow">FICHA DEL CLIENTE</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula)}</p></div><div class="client-detail-actions"><button id="editClientProfile" class="profile-edit-button" type="button">${editingClientProfileId === client.id ? "Cerrar edición" : "Editar datos"}</button><button id="startAnotherProcess" type="button">＋ Iniciar proceso nuevo</button></div></header>${renderClientProfile(client, latestInformation)}<section class="client-processes"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>Procesos realizados y en curso</h3></div><span class="count-pill">${items.length} ${items.length === 1 ? "proceso" : "procesos"}</span></div><div class="process-filter-row"><select id="clientProcessTypeFilter" aria-label="Filtrar por tipo"><option value="all">Todos los procesos</option><option value="reconexion">Reconexión</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select><select id="clientProcessStatusFilter" aria-label="Filtrar por estado"><option value="all">Todos los estados</option><option value="en_curso">En curso</option><option value="completado">Completados</option></select></div><div class="process-list">${items.length ? items.map(item => processCard(item)).join("") : `<p class="empty-state">Este cliente todavía no tiene procesos con esos filtros.</p>`}</div></section></div>`;
   $("#clientProcessTypeFilter").value = filterType; $("#clientProcessStatusFilter").value = filterStatus;
   $("#clientProcessTypeFilter").addEventListener("change", renderClientDetails); $("#clientProcessStatusFilter").addEventListener("change", renderClientDetails);
   detailsHost.querySelectorAll("[data-continue-process]").forEach(button => button.addEventListener("click", () => openProcessWizard(button.dataset.continueProcess)));
   detailsHost.querySelectorAll("[data-delete-process]").forEach(button => button.addEventListener("click", () => deleteProcess(button.dataset.deleteProcess)));
+  detailsHost.querySelectorAll("[data-toggle-process]").forEach(button => button.addEventListener("click", () => {
+    const panel = detailsHost.querySelector(`[data-process-details="${CSS.escape(button.dataset.toggleProcess)}"]`);
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    button.setAttribute("aria-expanded", String(!panel.hidden));
+    button.textContent = panel.hidden ? "Ver tareas" : "Ocultar tareas";
+  }));
   $("#backToClientList").addEventListener("click", () => { selectedClientId = null; profileMode = false; renderClientDetails(); });
+  $("#editClientProfile").addEventListener("click", () => { editingClientProfileId = editingClientProfileId === client.id ? null : client.id; renderClientDetails(); });
+  $("#cancelClientProfile")?.addEventListener("click", () => { editingClientProfileId = null; renderClientDetails(); });
+  $("#clientProfileForm")?.addEventListener("submit", saveClientProfile);
   $("#startAnotherProcess").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_START_CLIENT_PROCESS", client: { id: client.id, nombre: client.nombre, cedula: client.cedula } }, "*"));
   renderClientList(); applyProfileMode();
 }
@@ -178,15 +256,15 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   }
   dialog.dataset.processId = processId;
   const steps = getProcessSteps(process);
-  const checked = new Set(Array.isArray(process.pasosVerificados) ? process.pasosVerificados.map(Number) : []);
+  const checked = getCheckedProcessSteps(process);
   const currentStep = steps.findIndex((_, index) => !checked.has(index));
   const activeStep = requestedStep !== null && requestedStep >= 0 && requestedStep < steps.length ? requestedStep : currentStep;
   const client = clients.find(item => item.id === process.clienteId) || { nombre: process.clienteNombre, cedula: process.clienteCedula };
   const completed = currentStep < 0 || process.estado === "completado";
   const task = completed ? null : steps[activeStep];
   const help = processStepHelp[process.tipo]?.[activeStep] || "Completa esta tarea antes de continuar con el siguiente paso del proceso.";
-  const information = { ...(process.informacion || {}), ...getWizardInformationDraft(processId) };
-  const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(activeStep, information) : "";
+  const information = { ...(process.informacion || {}), cedulaCliente: String(client.cedula || ""), clienteNombre: clientName(client), valorMensualCliente: client.valorMensual ?? 0, ...getWizardInformationDraft(processId) };
+  const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(activeStep, information) : !completed ? renderClientProfileProcessFields(process, activeStep, information, client) : "";
   dialog.dataset.activeStep = String(activeStep);
   dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>Proceso completado</h3><p>Se guardaron todas las tareas de ${escapeHtml(processTypeLabel(process.tipo).toLocaleLowerCase("es"))}.</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
   dialog.querySelectorAll("[data-close-process-wizard]").forEach(button => button.addEventListener("click", () => dialog.close()));
@@ -198,7 +276,10 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
     setWizardInformationDraft(processId, readWizardInformation(dialog));
   });
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => setWizardInformationDraft(processId, readWizardInformation(dialog))));
-  dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("change", () => setWizardInformationDraft(processId, readWizardInformation(dialog))));
+  dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => updateReconnectionSummaries(dialog)));
+  dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("change", () => { setWizardInformationDraft(processId, readWizardInformation(dialog)); updateReconnectionSummaries(dialog); }));
+  dialog.querySelector("[data-copy-annotation]")?.addEventListener("click", async () => { const annotation = dialog.querySelector(".wizard-annotation")?.value || ""; try { await navigator.clipboard.writeText(annotation); dialog.querySelector("[data-copy-annotation]").textContent = "Anotación copiada"; } catch { dialog.querySelector(".wizard-annotation")?.select(); } });
+  updateReconnectionSummaries(dialog);
   dialog.querySelector("[data-previous-process-step]")?.addEventListener("click", () => goToPreviousProcessStep(processId, activeStep));
   dialog.querySelector("[name=numeroContacto]")?.addEventListener("change", event => saveWizardContactNumber(processId, event.currentTarget.value).catch(() => {}));
   dialog.querySelector("[data-complete-process-step]")?.addEventListener("click", completeWizardTask);
@@ -206,11 +287,60 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
 }
 function renderReconnectionStepFields(step, info) {
   if (step === 0) return `<div class="wizard-form-grid"><label class="wizard-contact-field" for="wizardContactNumber">Número de contacto del cliente<input id="wizardContactNumber" data-process-info name="numeroContacto" type="tel" inputmode="tel" autocomplete="tel" placeholder="Escribe el número de contacto" value="${escapeHtml(info.numeroContacto || "")}" required></label><label class="wizard-contact-field" for="wizardCanalContacto">¿Desde dónde se comunica el cliente?<select id="wizardCanalContacto" data-process-info name="canalContacto" required><option value="">Selecciona el medio de contacto</option>${["Chat", "Llamada", "Técnico", "Otro"].map(option => `<option value="${option}" ${info.canalContacto === option ? "selected" : ""}>${option}</option>`).join("")}</select></label></div>`;
-  if (step === 2) {
+  if (step === 1) {
     const zones = adjustmentZones.length ? adjustmentZones : [{ nombre: "Zona general", valor: 15000 }, { nombre: "Zona especial", valor: 20000 }];
-    const hasSavedZone = info.zonaReconexion && !zones.some(zone => zone.nombre === info.zonaReconexion);
-    const options = `${hasSavedZone ? `<option value="${escapeHtml(info.zonaReconexion)}" data-valor="${Number(info.valorReajuste) || 0}" selected>${escapeHtml(info.zonaReconexion)}</option>` : ""}${zones.map(zone => `<option value="${escapeHtml(zone.nombre)}" data-valor="${Number(zone.valor)}" ${info.zonaReconexion === zone.nombre ? "selected" : ""}>${escapeHtml(zone.nombre)}</option>`).join("")}`;
-    return `<div class="wizard-form-grid"><label class="wizard-contact-field" for="wizardZonaReconexion">¿En qué zona vive el cliente?<select id="wizardZonaReconexion" data-process-info name="zonaReconexion" required><option value="">Selecciona la zona del cliente</option>${options}</select></label><input type="hidden" data-process-info name="valorReajuste" value="${escapeHtml(info.valorReajuste || "")}"><p class="wizard-calculated-amount" data-reajuste-summary>${info.valorReajuste ? `En ${escapeHtml(info.zonaReconexion || "esta zona")} debes cobrar <strong>${escapeHtml(formatCurrency(info.valorReajuste))}</strong> de reajuste.` : "Selecciona una zona para calcular el reajuste."}</p></div>`;
+    const selectedZone = info.zonaReconexion || "Zona general";
+    const selectedZoneConfig = zones.find(zone => zone.nombre === selectedZone);
+    const selectedAmount = info.valorReajuste ?? selectedZoneConfig?.valor ?? "";
+    const hasSavedZone = selectedZone && !zones.some(zone => zone.nombre === selectedZone);
+    const options = `${hasSavedZone ? `<option value="${escapeHtml(selectedZone)}" data-valor="${Number(selectedAmount) || 0}" selected>${escapeHtml(selectedZone)}</option>` : ""}${zones.map(zone => `<option value="${escapeHtml(zone.nombre)}" data-valor="${Number(zone.valor)}" ${selectedZone === zone.nombre ? "selected" : ""}>${escapeHtml(zone.nombre)}</option>`).join("")}`;
+    const commission = info.comisionReconexion || "1500";
+    return `<div class="wizard-form-grid"><label class="wizard-contact-field" for="wizardZonaReconexion">¿En qué zona vive el cliente?<select id="wizardZonaReconexion" data-process-info name="zonaReconexion" required>${options}</select></label><label class="wizard-contact-field">Comisión<input data-process-info name="comisionReconexion" type="number" min="0" step="500" value="${escapeHtml(commission)}" required></label><input type="hidden" data-process-info name="valorReajuste" value="${escapeHtml(selectedAmount)}"><p class="wizard-calculated-amount" data-reajuste-summary>${selectedAmount ? `En ${escapeHtml(selectedZone)}: reajuste <strong>${escapeHtml(formatCurrency(selectedAmount))}</strong> + comisión <strong>${escapeHtml(formatCurrency(commission))}</strong> = total <strong>${escapeHtml(formatCurrency(Number(selectedAmount)+Number(commission)))}</strong>.` : "Selecciona una zona para calcular reajuste, comisión y total."}</p></div>`;
+  }
+  if (step === 2) {
+    return `<a class="wizard-external-link wizard-invoices-link" href="https://wisphub.net/clientes/ver/${encodeURIComponent(clientCedulaForLink(info))}@cibercitywisp/#retab3" target="_blank" rel="noopener noreferrer">Abrir facturas pendientes en Wisphub ↗</a><label class="wizard-contact-field">¿Qué acción realizaste?<select data-process-info name="accionFactura" required><option value="">Selecciona la acción</option>${[["reajuste","Ajusté la factura con solo reajuste (+ comisión)"],["mes_reajuste","Ajusté la factura con mes + reajuste (sin comisión)"],["nueva_reajuste","Generé una factura nueva de reajuste (+ comisión)"]].map(([value,label])=>`<option value="${value}" ${info.accionFactura===value?"selected":""}>${label}</option>`).join("")}</select></label>`;
+  }
+  if (step === 3) return `<label class="wizard-contact-field">Fecha de pago que quedó en Wisphub<input data-process-info name="fechaPago" type="date" value="${escapeHtml(info.fechaPago || "")}" required></label><p class="wizard-calculated-amount" data-payment-date-summary></p>`;
+  if (step === 4) {
+    const annotationLink = `https://wisphub.net/clientes/ver/${encodeURIComponent(info.cedulaCliente || "")}@cibercitywisp/#set1`;
+    const annotation = buildReconnectionAnnotation(info);
+    return `<p class="wizard-calculated-amount">Anotación lista para copiar:</p><textarea class="wizard-annotation" readonly rows="3">${escapeHtml(annotation)}</textarea><button type="button" class="secondary-button" data-copy-annotation>Copiar anotación</button><a class="wizard-external-link" href="${annotationLink}" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a><label class="wizard-contact-field">Fecha y hora para revisar la generación de factura<input data-process-info name="fechaHoraRevisionFactura" type="datetime-local" value="${escapeHtml(info.fechaHoraRevisionFactura || defaultReminderDate(info.fechaGeneracionFactura || info.fechaPago))}" required></label><label class="wizard-check-confirm"><input data-process-info name="anotacionLista" type="checkbox" value="true" ${info.anotacionLista === "true" ? "checked" : ""} required> Ya hice la anotación en Wisphub</label>`;
+  }
+  return "";
+}
+function clientCedulaForLink(info) { return info.cedulaCliente || ""; }
+function buildReconnectionAnnotation(info) { const date = new Intl.DateTimeFormat("es-CO").format(new Date()); const total = formatCurrency(info.totalCobrar ?? calculateReconnectionTotal(info)); const d = info.fechaPago ? new Date(`${info.fechaPago}T12:00:00`) : null; const day = d && Number.isFinite(d.getTime()) ? d.getDate() : ""; const contact = info.canalContacto ? ` Contacto por ${info.canalContacto}.` : ""; const zone = info.zonaReconexion ? ` Zona ${info.zonaReconexion}.` : ""; const label={reajuste:"reajuste + comisión",mes_reajuste:"mes + reajuste",nueva_reajuste:"factura nueva de reajuste + comisión"}[info.accionFactura]; const action = label ? ` Acción sobre factura: ${label}.` : ""; return `${date} RECONEXIÓN: ${clientName(clients.find(client => client.cedula === info.cedulaCliente) || {nombre: info.clienteNombre})}.${contact}${zone} Total cobrado: ${total}.${action}${day ? ` Queda con fecha de pago el día ${day} de cada mes.` : ""}`; }
+function calculateReconnectionTotal(info = {}) {
+  const reconnect = Number(info.valorReconexion) || 0;
+  const adjustment = Number(info.valorReajuste) || 0;
+  const commission = Number(info.comisionReconexion) || 0;
+  const monthly = Number(info.valorMesFactura ?? info.valorMensualCliente) || 0;
+  let invoiceTotal = 0;
+  switch (info.accionFactura) {
+    case "reajuste":
+    case "nueva_reajuste": invoiceTotal = adjustment + commission; break;
+    case "mes_reajuste": invoiceTotal = monthly + adjustment; break;
+  }
+  return reconnect + invoiceTotal;
+}
+function defaultReminderDate(paymentDate) { if (!paymentDate) return ""; return `${paymentDate}T09:00`; }
+function updateReconnectionSummaries(dialog) {
+  const process = processes.find(item => item.id === dialog.dataset.processId);
+  const information = { ...(process?.informacion || {}), ...readWizardInformation(dialog), valorMensualCliente: clients.find(item => item.id === process?.clienteId)?.valorMensual ?? 0 };
+  const charge = dialog.querySelector("[data-invoice-total]"); if (charge) charge.textContent = formatCurrency(calculateReconnectionTotal(information));
+  if (dialog.querySelector("[data-reajuste-summary]")) updateReajusteSummary(dialog, dialog.querySelector('[name="valorReajuste"]')?.value);
+  const date = dialog.querySelector('[name="fechaPago"]')?.value;
+  const summary = dialog.querySelector("[data-payment-date-summary]");
+  if (summary) { const payment = date ? new Date(`${date}T12:00:00`) : null; if (!payment || !Number.isFinite(payment.getTime())) summary.textContent = "Al guardar la fecha se calcularán automáticamente corte (2 días después) y generación (10 días antes)."; else { const cut = new Date(payment); cut.setDate(cut.getDate()+2); const gen = new Date(payment); gen.setDate(gen.getDate()-10); summary.textContent = `Fecha de corte: ${cut.toLocaleDateString("en-CA")} · Generación de factura: ${gen.toLocaleDateString("en-CA")}`; } }
+}
+function renderClientProfileProcessFields(process, step, info, client) {
+  if (process.tipo === "cambio-plan") {
+    if (step === 0) return `<p class="wizard-calculated-amount">Plan registrado actualmente: <strong>${escapeHtml(client.plan || "Sin registrar")}</strong></p>`;
+    if (step === 1) return `<div class="wizard-form-grid"><label class="wizard-contact-field">Nuevo plan<input data-process-info name="nuevoPlan" value="${escapeHtml(info.nuevoPlan || "")}" placeholder="Escribe el nuevo plan" required></label><label class="wizard-contact-field">Nuevo valor mensual (opcional)<input data-process-info name="nuevoValorMensual" type="number" min="0" step="100" value="${escapeHtml(info.nuevoValorMensual || "")}" placeholder="Valor en pesos"></label></div>`;
+  }
+  if (process.tipo === "cambio-fecha-pago") {
+    if (step === 0) return `<p class="wizard-calculated-amount">Día de pago registrado actualmente: <strong>${escapeHtml(client.diaPago ? `${client.diaPago} de cada mes` : "Sin registrar")}</strong></p>`;
+    if (step === 1) return `<label class="wizard-contact-field">Nuevo día de pago<input data-process-info name="nuevoDiaPago" type="number" min="1" max="31" step="1" value="${escapeHtml(info.nuevoDiaPago || "")}" placeholder="Día del mes (1 a 31)" required></label>`;
   }
   return "";
 }
@@ -218,10 +348,11 @@ function formatCurrency(value) { return new Intl.NumberFormat("es-CO", { style: 
 function updateReajusteSummary(dialog, amount) {
   const summary = dialog.querySelector("[data-reajuste-summary]");
   const zone = dialog.querySelector("[name=zonaReconexion]")?.value;
-  if (summary) summary.innerHTML = amount && zone ? `En ${escapeHtml(zone)} debes cobrar <strong>${escapeHtml(formatCurrency(amount))}</strong> de reajuste.` : "Selecciona una zona para calcular el reajuste.";
+  const commission = Number(dialog.querySelector('[name="comisionReconexion"]')?.value || 0);
+  if (summary) summary.innerHTML = amount && zone ? `En ${escapeHtml(zone)}: reajuste <strong>${escapeHtml(formatCurrency(amount))}</strong> + comisión <strong>${escapeHtml(formatCurrency(commission))}</strong> = total <strong>${escapeHtml(formatCurrency(Number(amount)+commission))}</strong>.` : "Selecciona una zona para calcular reajuste, comisión y total.";
 }
 function readWizardInformation(dialog) {
-  return Object.fromEntries([...dialog.querySelectorAll("[data-process-info]")].map(field => [field.name, field.value.trim()]));
+  return Object.fromEntries([...dialog.querySelectorAll("[data-process-info]")].map(field => [field.name, field.type === "checkbox" ? String(field.checked) : field.value.trim()]));
 }
 async function saveWizardContactNumber(processId, value) {
   const number = String(value || "").trim();
@@ -248,7 +379,7 @@ async function goToPreviousProcessStep(processId, activeStep) {
   const process = processes.find(item => item.id === processId);
   if (!process || process.iniciadoPorUid !== currentUserUid || activeStep < 1) return;
   const steps = getProcessSteps(process);
-  const checked = new Set(Array.isArray(process.pasosVerificados) ? process.pasosVerificados.map(Number) : []);
+  const checked = getCheckedProcessSteps(process);
   checked.delete(activeStep - 1);
   const pasosVerificados = [...checked].sort((a, b) => a - b);
   const button = $("[data-previous-process-step]");
@@ -271,11 +402,11 @@ async function completeWizardTask(event) {
   const process = processes.find(item => item.id === processId);
   if (!process || process.iniciadoPorUid !== currentUserUid) return;
   const steps = getProcessSteps(process);
-  const checked = new Set(Array.isArray(process.pasosVerificados) ? process.pasosVerificados.map(Number) : []);
+  const checked = getCheckedProcessSteps(process);
   if (steps.findIndex((_, stepIndex) => !checked.has(stepIndex)) !== index) return;
   const dialog = $("#processStepDialog");
   const fields = [...dialog.querySelectorAll("[data-process-info]")];
-  const missingField = fields.find(field => !field.value.trim());
+  const missingField = fields.find(field => field.type === "checkbox" ? !field.checked : !field.value.trim());
   if (missingField) {
     const status = $(".wizard-status"); if (status) { status.textContent = "Completa los datos de esta tarea antes de continuar."; status.classList.add("is-error"); }
     missingField.focus(); return;
@@ -283,7 +414,38 @@ async function completeWizardTask(event) {
   const contactInput = dialog.querySelector("[name=numeroContacto]");
   await processDetailSaveQueue.catch(() => {});
   const latest = processes.find(item => item.id === processId) || process;
-  const informacion = { ...(latest.informacion || {}), ...getWizardInformationDraft(processId), ...readWizardInformation(dialog) };
+  const informacion = { ...(latest.informacion || {}), ...getWizardInformationDraft(processId), ...readWizardInformation(dialog), valorMensualCliente: clients.find(item => item.id === process.clienteId)?.valorMensual ?? 0 };
+  let profileChanges = null;
+  if (process.tipo === "cambio-plan" && index === 2) {
+    if (!String(informacion.nuevoPlan || "").trim()) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra el nuevo plan en la tarea anterior para actualizar la ficha del cliente."; status.classList.add("is-error"); } return; }
+    profileChanges = { plan: String(informacion.nuevoPlan).trim() };
+    if (String(informacion.nuevoValorMensual || "").trim()) {
+      const monthly = Number(informacion.nuevoValorMensual);
+      if (!Number.isFinite(monthly) || monthly < 0) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe un valor mensual válido para actualizar la ficha."; status.classList.add("is-error"); } return; }
+      profileChanges.valorMensual = monthly;
+    }
+  } else if (process.tipo === "cambio-fecha-pago" && index === 2) {
+    const day = Number(informacion.nuevoDiaPago);
+    if (!Number.isInteger(day) || day < 1 || day > 31) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra el nuevo día de pago en la tarea anterior para actualizar la ficha."; status.classList.add("is-error"); } return; }
+    profileChanges = { diaPago: day };
+  } else if (process.tipo === "reconexion" && index === 1 && String(informacion.zonaReconexion || "").trim()) {
+    const commission = Number(informacion.comisionReconexion);
+    if (!Number.isFinite(commission) || commission < 0) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe una comisión válida."; status.classList.add("is-error"); } return; }
+    informacion.comisionReconexion = commission;
+    profileChanges = { zona: String(informacion.zonaReconexion).trim() };
+  } else if (process.tipo === "reconexion" && index === 2) {
+    if (!["reajuste", "mes_reajuste", "nueva_reajuste"].includes(informacion.accionFactura)) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona la acción que realizaste en la factura."; status.classList.add("is-error"); } return; }
+    informacion.totalCobrar = calculateReconnectionTotal(informacion);
+  } else if (process.tipo === "reconexion" && index === 3) {
+    const payment = new Date(`${informacion.fechaPago}T12:00:00`);
+    if (!Number.isFinite(payment.getTime())) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona una fecha de pago válida."; status.classList.add("is-error"); } return; }
+    const cutoff = new Date(payment); cutoff.setDate(cutoff.getDate() + 2);
+    const generation = new Date(payment); generation.setDate(generation.getDate() - 10);
+    const isoDay = date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+    profileChanges = { fechaPago: informacion.fechaPago, fechaCorte: isoDay(cutoff), fechaGeneracionFactura: isoDay(generation), diaPago: payment.getDate(), diaCorte: cutoff.getDate() };
+    informacion.fechaCorte = profileChanges.fechaCorte;
+    informacion.fechaGeneracionFactura = profileChanges.fechaGeneracionFactura;
+  }
   checked.add(index);
   const pasosVerificados = [...checked].sort((a, b) => a - b);
   const estado = pasosVerificados.length === steps.length ? "completado" : "en_curso";
@@ -292,7 +454,18 @@ async function completeWizardTask(event) {
   const status = $(".wizard-status");
   if (status) status.textContent = "Guardando tarea…";
   try {
-    await window.parent.INTERCOL_FIREBASE.updateClientProcess(processId, { ...(informacion ? { informacion } : {}), pasos: steps, pasosVerificados, estado });
+    const firebase = window.parent.INTERCOL_FIREBASE;
+    if (process.tipo === "reconexion" && index === 4 && !informacion.notificacionFacturaId) {
+      const reminder = String(informacion.fechaHoraRevisionFactura || "");
+      if (!reminder || new Date(reminder).getTime() <= Date.now()) throw new Error("Elige una fecha y hora futura para recibir el aviso de revisión de factura.");
+      const advisorName = currentUserName || "Asesor";
+      const created = await firebase.createPaymentNotification({ customerName: clientName(clients.find(item => item.id === process.clienteId) || { nombre: process.clienteNombre }), customerId: process.clienteCedula, notificationDate: reminder, paymentDay: informacion.fechaPago ? Number(informacion.fechaPago.slice(-2)) : null, advisorUid: currentUserUid, advisorName, processId });
+      informacion.notificacionFacturaId = created.id;
+    }
+    if (profileChanges && firebase.completeClientProfileStep) {
+      await firebase.completeClientProfileStep({ clientId: process.clienteId, processId, profile: profileChanges, informacion, pasos: steps, pasosVerificados, estado });
+      clients = clients.map(item => item.id === process.clienteId ? { ...item, ...profileChanges } : item);
+    } else await firebase.updateClientProcess(processId, { ...(informacion ? { informacion } : {}), pasos: steps, pasosVerificados, estado });
     if (contactInput) setWizardContactDraft(processId, "");
     setWizardInformationDraft(processId, {});
     processes = processes.map(item => item.id === processId ? { ...item, ...(informacion ? { informacion } : {}), pasos: steps, pasosVerificados, estado, ...(estado === "completado" ? { completadoEn: new Date() } : {}) } : item);
@@ -320,10 +493,11 @@ window.addEventListener("message", event => {
   if (event.data?.type === "INTERCOL_AUTH_STATE") {
     const uid = String(event.data.user?.uid || "");
     if (!uid) {
-      isAuthenticated = false; currentUserUid = ""; currentUserIsAdmin = false; stopClientsSync?.(); stopProcessesSync?.(); stopClientsSync = stopProcessesSync = null; clients = []; processes = []; selectedClientId = null; profileMode = false;
+      isAuthenticated = false; currentUserUid = ""; currentUserName = ""; currentUserIsAdmin = false; stopClientsSync?.(); stopProcessesSync?.(); stopClientsSync = stopProcessesSync = null; clients = []; processes = []; selectedClientId = null; profileMode = false;
       $("#syncStatus").textContent = "Inicia sesión para ver los clientes"; clientsHost.innerHTML = `<p class="empty-state">Inicia sesión para consultar las fichas y los procesos.</p>`; notificationsHost.innerHTML = `<p class="empty-state">Inicia sesión para consultar los procesos abiertos.</p>`; renderClientDetails(); return;
     }
     if (!isAuthenticated || currentUserUid !== uid) connectData(uid);
+    currentUserName = String(event.data.profile?.asesor || event.data.profile?.nombre || "").trim();
     currentUserIsAdmin = event.data.isAdmin === true || String(event.data.profile?.rol || "").toLocaleLowerCase("es") === "administrador";
     renderClientDetails();
   }
@@ -346,7 +520,8 @@ function connectData(uid) {
   stopClientsSync = firebase.subscribeClients(items => { clients = items; displayStatus(); renderClientList(); renderClientDetails(); }, error => displayError(error, clientsHost));
   stopProcessesSync = firebase.subscribeClientProcesses(items => { processes = items; displayStatus(); renderNotifications(); renderClientList(); renderClientDetails(); }, error => displayError(error, notificationsHost));
   stopAdjustmentZonesSync = firebase.subscribeAdjustmentZones?.(zones => {
-    if (Array.isArray(zones) && zones.length) adjustmentZones = zones.filter(zone => zone?.nombre && [15000, 20000].includes(Number(zone.valor)));
+    if (Array.isArray(zones) && zones.length) adjustmentZones = zones.filter(zone => zone?.nombre && Number.isFinite(Number(zone.valor)) && Number(zone.valor) > 0);
+    if (selectedClientId) renderClientDetails();
   }, error => console.error("No se pudo cargar el catálogo de zonas:", error)) || null;
 }
 setInterval(() => { renderNotifications(); if (selectedClientId) renderClientDetails(); }, 60000);

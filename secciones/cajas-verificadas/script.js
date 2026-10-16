@@ -73,8 +73,8 @@ function subscribe() {
       const stamp = value => value?.toMillis?.() ?? (value?.seconds ? value.seconds * 1000 : Date.parse(value || "") || 0);
       return stamp(b.creadoEn) - stamp(a.creadoEn);
     });
-    loaded = true; count.textContent = `${boxes.length} caja${boxes.length === 1 ? "" : "s"}`;
-    status.textContent = boxes.length ? "Consulta pública de todas las cajas verificadas." : "Todavía no se han guardado cajas.";
+    loaded = true; count.textContent = `${boxes.length} verificación${boxes.length === 1 ? "" : "es"}`;
+    status.textContent = boxes.length ? "Historial general compartido con todos los usuarios registrados." : "Todavía no se han guardado verificaciones.";
     const selected = boxes.find(box => box.id === boxDetail.dataset.boxId);
     if (selected) showDetail(selected);
     else renderList();
@@ -82,7 +82,7 @@ function subscribe() {
     console.error("Error leyendo cajas verificadas:", error);
     loaded = true; count.textContent = "Error";
     status.textContent = error?.code === "permission-denied"
-      ? "Firestore no permite lectura pública. Publica las reglas actualizadas de Firestore."
+      ? "Inicia sesión con una cuenta registrada para consultar las cajas. Si ya iniciaste sesión, publica las reglas actualizadas de Firestore."
       : "No se pudieron cargar las cajas. Revisa tu conexión.";
     renderList();
   });

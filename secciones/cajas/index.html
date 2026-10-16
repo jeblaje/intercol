@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cajas · INTERCOL</title>
+  <link rel="stylesheet" href="style.css?v=20261016-box-viewport-scroll">
+</head>
+<body>
+  <main class="boxes-page">
+    <header class="page-heading"><div><span class="eyebrow">CONTROL DE INSTALACIÓN</span><h1>Cajas</h1><p>Consulta cada caja y el historial de verificaciones realizadas.</p></div><span class="count-pill" id="boxCount">Cargando…</span></header>
+    <section class="boxes-panel">
+      <div class="toolbar"><label class="sr-only" for="boxSearch">Buscar caja</label><input id="boxSearch" type="search" placeholder="Buscar por número, dirección, técnico, asesor o cédula"><select id="boxType" aria-label="Filtrar por tipo"><option value="all">Todos los tipos</option><option value="x8">X8</option><option value="x16">X16</option></select></div>
+      <p class="status" id="boxStatus" role="status">Conectando con Firebase…</p>
+      <div class="boxes-layout"><div class="box-list" id="boxList" aria-label="Listado de cajas"></div><aside class="box-detail" id="boxDetail"><div class="placeholder"><span>▤</span><strong>Selecciona una caja</strong><p>Aquí verás sus datos y el historial de verificaciones.</p></div></aside></div>
+    </section>
+  </main>
+  <script src="script.js?v=20261016-box-viewport-scroll"></script>
+</body>
+</html>
