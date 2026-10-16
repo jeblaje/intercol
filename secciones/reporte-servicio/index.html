@@ -13,6 +13,7 @@
       <form id="reportForm">
         <fieldset class="report-types"><legend>Tipo de reporte</legend>
           <label class="type-choice"><input type="radio" name="reportType" value="Caja con potencia alta"><span>Caja con potencia alta</span></label>
+          <label class="type-choice"><input type="radio" name="reportType" value="Caja sin potencia"><span>Caja sin potencia</span></label>
           <label class="type-choice"><input type="radio" name="reportType" value="Splitter autorizado"><span>Splitter autorizado</span></label>
         </fieldset>
         <div id="splitterFields" class="form-grid">
@@ -52,10 +53,29 @@
           <fieldset class="ports-field full-width"><legend>Puerto donde se coloca el splitter</legend><div id="highPortChoices" class="button-choices port-choices"></div></fieldset>
           <label class="full-width">Asesor<input name="highAdvisor" placeholder="Nombre del asesor" required></label>
         </div>
+        <div id="noPowerFields" class="form-grid" hidden>
+          <label>Cliente<input name="noPowerCustomerName" placeholder="Nombre completo" required></label>
+          <label>Cédula<input name="noPowerCedula" inputmode="numeric" placeholder="Número de cédula" required></label>
+          <label>Dirección<input name="noPowerAddress" placeholder="Dirección" required></label>
+          <label>Barrio<input name="noPowerNeighborhood" placeholder="Barrio" required></label>
+          <label>Serial<input name="noPowerSerial" placeholder="Serial de la caja" required></label>
+          <label>Red<input name="noPowerNetwork" placeholder="Nombre de la red" required></label>
+          <label>Clave<input name="noPowerNetworkKey" placeholder="Clave de la red" required></label>
+          <label>Ticket<input name="noPowerTicket" placeholder="Número de ticket" required></label>
+          <label>¿Pagó?<select name="noPowerPaid" required><option value="Sí">Sí</option><option value="No">No</option></select></label>
+          <label>¿A quién pagó?<input name="noPowerPaidTo" placeholder="Nombre de quien recibió el pago"></label>
+          <label>Técnico<input name="noPowerTechnician" placeholder="Nombre del técnico" required></label>
+          <label>Asesor de ventas a quien se pasa el reporte<input name="noPowerPassToAdvisor" placeholder="Nombre del asesor" required></label>
+          <label class="full-width">Anotación<textarea name="noPowerAnnotation" rows="3" placeholder="Anotación adicional (opcional)"></textarea></label>
+          <label>¿Hay que sintonizar?<select name="noPowerTune" required><option value="Sintonizar canales">Sintonizar canales</option><option value="No">No</option></select></label>
+          <label>¿Es el primer cliente en la caja?<select name="noPowerFirstCustomer" required><option value="Sí">Sí</option><option value="No">No</option></select></label>
+          <label>Tipo de servicio<select name="noPowerServiceType" required><option value="Instalación">Instalación</option><option value="Soporte">Soporte</option></select></label>
+          <label class="full-width">Asesor<input name="noPowerAdvisor" placeholder="Nombre del asesor" required></label>
+        </div>
       </form>
       <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
     </section>
   </main>
-  <script src="script.js?v=20261009-report-type-titles"></script>
+  <script src="script.js?v=20261016-no-power-report"></script>
 </body>
 </html>

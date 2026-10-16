@@ -45,14 +45,23 @@ function isHighPower() {
   return value("reportType") === "Caja con potencia alta";
 }
 
+function isNoPower() {
+  return value("reportType") === "Caja sin potencia";
+}
+
 function syncMode() {
   const highPower = isHighPower();
+  const noPower = isNoPower();
+  const splitterMode = !highPower && !noPower;
   const splitterFields = document.querySelector("#splitterFields");
   const highPowerFields = document.querySelector("#highPowerFields");
-  splitterFields.hidden = highPower;
+  const noPowerFields = document.querySelector("#noPowerFields");
+  splitterFields.hidden = !splitterMode;
   highPowerFields.hidden = !highPower;
-  splitterFields.querySelectorAll("input,textarea,select,button").forEach(control => { control.disabled = highPower; });
+  noPowerFields.hidden = !noPower;
+  splitterFields.querySelectorAll("input,textarea,select,button").forEach(control => { control.disabled = !splitterMode; });
   highPowerFields.querySelectorAll("input,textarea,select,button").forEach(control => { control.disabled = !highPower; });
+  noPowerFields.querySelectorAll("input,textarea,select,button").forEach(control => { control.disabled = !noPower; });
 }
 
 function renderPorts(containerId = "portChoices", highPower = false) {
@@ -101,6 +110,34 @@ function renderControls() {
 }
 
 function renderReport() {
+  if (isNoPower()) {
+    const reportTitle = "=== REPORTE DE SERVICIO: CAJA SIN POTENCIA ===";
+    const tune = value("noPowerTune");
+    outputTitle.textContent = reportTitle.replaceAll("=", "").trim();
+    output.value = [
+      reportTitle,
+      optionalLine("Cliente", value("noPowerCustomerName")),
+      optionalLine("Cédula", value("noPowerCedula")),
+      optionalLine("Dirección", value("noPowerAddress")),
+      optionalLine("Barrio", value("noPowerNeighborhood")),
+      optionalLine("SERIAL", value("noPowerSerial")),
+      optionalLine("Red", value("noPowerNetwork")),
+      optionalLine("Clave", value("noPowerNetworkKey")),
+      optionalLine("Ticket", value("noPowerTicket")),
+      optionalLine("Pago", value("noPowerPaid")),
+      optionalLine("¿A quién pagó?", value("noPowerPaidTo")),
+      optionalLine("Técnico", value("noPowerTechnician")),
+      optionalLine("Asesor de ventas a quien se pasa el reporte", value("noPowerPassToAdvisor")),
+      `Anotación: ${value("noPowerAnnotation")}`,
+      optionalLine("Hay que sintonizar", tune),
+      optionalLine("Primer cliente en la caja", value("noPowerFirstCustomer")),
+      optionalLine("Tipo de servicio", value("noPowerServiceType").toUpperCase()),
+      optionalLine("Asesor", value("noPowerAdvisor"))
+    ].filter(Boolean).join("\n");
+    saveReportDraft();
+    requestResize();
+    return;
+  }
   const reportTitle = isHighPower()
     ? "=== REPORTE DE SERVICIO: CAJA CON POTENCIA ALTA ==="
     : "=== REPORTE DE SERVICIO: SPLITTER AUTORIZADO ===";
