@@ -41,7 +41,7 @@ window.INTERCOL_SECTIONS = [
     name: "Verificar Caja",
     description: "Herramienta para verificar y cuadrar la caja.",
     icon: "✓",
-    path: "secciones/verificar-caja/index.html",
+    path: "secciones/verificar-caja/index.html?v=20261017-box-number-dom-label-v2",
     requiresAuth: true
   },
   {
@@ -76,7 +76,7 @@ window.INTERCOL_SECTIONS = [
     name: "Clientes",
     description: "Consulta fichas de clientes e inicia el seguimiento de sus procesos.",
     icon: "♙",
-    path: "secciones/clientes/index.html"
+    path: "secciones/clientes/index.html?v=20261017-client-create-compat"
   },
   {
     id: "reporte-servicio",

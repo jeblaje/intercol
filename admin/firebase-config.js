@@ -13,6 +13,11 @@ const tvRetirementRecords = collection(firestore, "retirosTv");
 const verifiedBoxes = collection(firestore, "cajasVerificadas");
 const clients = collection(firestore, "clientes");
 const clientProcesses = collection(firestore, "procesosClientes");
+const cleanBoxNumberValue = value => {
+  const original = String(value ?? "").trim();
+  const numeric = original.replace(/[^0-9-]/g, "");
+  return numeric || original;
+};
 const publicSupportConfig = doc(firestore, "configuracionPublica", "equipos");
 const adjustmentZonesConfig = doc(firestore, "configuracionPublica", "zonasReajuste");
 function usernameEmail(username) {
@@ -139,7 +144,7 @@ export function createVerifiedBox(data) {
   const record = {
     fecha: String(data.fecha ?? ""),
     tipoCaja: String(data.tipoCaja ?? ""),
-    numeroCaja: String(data.numeroCaja ?? ""),
+    numeroCaja: cleanBoxNumberValue(data.numeroCaja),
     direccion: String(data.direccion ?? ""),
     tecnico: String(data.tecnico ?? ""),
     asesor: String(data.asesor ?? ""),
@@ -166,7 +171,7 @@ export function updateVerifiedBox(id, data) {
   return updateDoc(doc(firestore, "cajasVerificadas", id), {
     fecha: String(data.fecha ?? ""),
     tipoCaja: String(data.tipoCaja ?? ""),
-    numeroCaja: String(data.numeroCaja ?? ""),
+    numeroCaja: cleanBoxNumberValue(data.numeroCaja),
     direccion: String(data.direccion ?? ""),
     tecnico: String(data.tecnico ?? ""),
     asesor: String(data.asesor ?? ""),
@@ -213,6 +218,7 @@ function cleanClientProfile(data = {}) {
     return Number.isInteger(day) && day >= 1 && day <= 31 ? day : null;
   };
   const profile = {};
+  if (Object.hasOwn(data, "estadoCliente")) profile.estadoCliente = ["sin_registrar", "activo", "suspendido", "retirado", "cancelado"].includes(String(data.estadoCliente || "")) ? String(data.estadoCliente) : "sin_registrar";
   if (Object.hasOwn(data, "plan")) profile.plan = String(data.plan || "").trim() || null;
   if (Object.hasOwn(data, "valorMensual")) {
     const monthly = data.valorMensual === "" || data.valorMensual === null || data.valorMensual === undefined ? null : Number(data.valorMensual);
@@ -234,7 +240,11 @@ export function createClientProcess({ client, type, user }) {
     "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
     "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
   };
-  return addDoc(clientProcesses, { clienteId: client.id, clienteNombre: String(client.nombre || ""), clienteCedula: String(client.cedula || ""), tipo: String(type || ""), estado: "en_curso", informacion: {}, pasos: stepsByType[type] || [], pasosVerificados: [], iniciadoPorUid: user?.uid || "", iniciadoPorNombre: String(user?.nombre || ""), iniciadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
+  const initialInformation = {
+    ...(type === "cambio-plan" ? { planAnterior: String(client.plan || ""), valorMensualAnterior: client.valorMensual ?? null } : {}),
+    ...(type === "cambio-fecha-pago" || type === "reconexion" ? { diaPagoAnterior: client.diaPago ?? null, fechaPagoAnterior: String(client.fechaPago || "") } : {})
+  };
+  return addDoc(clientProcesses, { clienteId: client.id, clienteNombre: String(client.nombre || ""), clienteCedula: String(client.cedula || ""), tipo: String(type || ""), estado: "en_curso", informacion: initialInformation, pasos: stepsByType[type] || [], pasosVerificados: [], iniciadoPorUid: user?.uid || "", iniciadoPorNombre: String(user?.nombre || ""), iniciadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
 }
 function cleanProcessInformationValue(value, seen = new WeakSet()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;

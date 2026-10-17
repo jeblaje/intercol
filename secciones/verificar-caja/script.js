@@ -39,6 +39,10 @@ let newVerificationFromHistory = false;
 const onuUrl = cedula => `https://intercolwisp.smartolt.com/onu/configured?free_text=${encodeURIComponent(cedula)}&sort_by=id&sort_order=desc`;
 const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponent(cedula)}@cibercitywisp/#set1`;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+const displayBoxNumber = value => {
+  const number = String(value || "").trim().replace(/^caja\s*/i, "").trim();
+  return `Caja ${number || "Sin número"}`;
+};
 const boxData = () => Object.fromEntries(new FormData(boxForm).entries());
 const portActionFor = user => user?.portAction || (user?.orangeBackground ? "cancelled" : "");
 const serviceStatusFor = user => user?.serviceStatus || user?.estadoServicio || (portActionFor(user) === "cancelled" ? "cancelled" : portActionFor(user) === "notRegistered" ? "notRegistered" : "active");
@@ -136,7 +140,7 @@ function renderVerifiedBoxes() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `verified-row ${verifiedDetail.dataset.boxId === box.id ? "selected" : ""}`;
-    const title = document.createElement("strong"); title.textContent = `${box.numeroCaja || "Sin número"} · ${String(box.tipoCaja || "").toUpperCase()}`;
+    const title = document.createElement("strong"); title.textContent = `${displayBoxNumber(box.numeroCaja)} · ${String(box.tipoCaja || "").toUpperCase()}`;
     const summary = document.createElement("span"); summary.textContent = `${box.direccion || "Sin dirección"} · ${box.tecnico || "Sin técnico"} · ${formatBoxDate(box.fecha)}`;
     const advisor = document.createElement("span"); advisor.className = "verified-row-advisor"; advisor.textContent = `Asesor: ${box.asesor || "Sin asesor"}`;
     const count = document.createElement("small"); count.textContent = `${Array.isArray(box.cedulas) ? box.cedulas.length : 0} puertos`;
@@ -159,7 +163,7 @@ function showVerifiedBox(box) {
   }).join("");
   const canEdit = Boolean(advisorAuth.user && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
   const actions = canEdit ? `<div class="verified-record-actions"><button type="button" class="secondary" id="editVerifiedBox">Editar caja</button><button type="button" class="danger" id="deleteVerifiedBox">Eliminar caja</button></div>` : "";
-  verifiedDetail.innerHTML = `<div class="verified-ficha"><div class="verified-ficha-heading"><div><span class="detail-kicker">FICHA DE CAJA VERIFICADA</span><h3>${escapeHtml(box.numeroCaja || "Sin número")}</h3></div>${safeLink ? `<a class="secondary verified-filter-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : ""}</div>${actions}<dl class="detail-data"><div><dt>Fecha</dt><dd>${escapeHtml(formatBoxDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${escapeHtml(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(box.tecnico || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(box.asesor || "—")}</dd></div></dl><h4>Puertos e identificaciones</h4><div class="verified-port-list">${usersMarkup || '<p class="verified-status">No se guardaron puertos.</p>'}</div></div>`;
+  verifiedDetail.innerHTML = `<div class="verified-ficha"><div class="verified-ficha-heading"><div><span class="detail-kicker">FICHA DE CAJA VERIFICADA</span><h3>${escapeHtml(displayBoxNumber(box.numeroCaja))}</h3></div>${safeLink ? `<a class="secondary verified-filter-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : ""}</div>${actions}<dl class="detail-data"><div><dt>Fecha</dt><dd>${escapeHtml(formatBoxDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${escapeHtml(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(box.tecnico || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(box.asesor || "—")}</dd></div></dl><h4>Puertos e identificaciones</h4><div class="verified-port-list">${usersMarkup || '<p class="verified-status">No se guardaron puertos.</p>'}</div></div>`;
   document.querySelector("#editVerifiedBox")?.addEventListener("click", () => beginVerifiedBoxEdit(box));
   document.querySelector("#deleteVerifiedBox")?.addEventListener("click", () => removeVerifiedBox(box));
   renderVerifiedBoxes();

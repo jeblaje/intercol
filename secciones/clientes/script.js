@@ -20,7 +20,12 @@ const processStepHelp = {
 const legacyReconnectionSteps = ["Confirmar cliente y validar su cédula", "Verificar estado del servicio y motivo de suspensión", "Realizar la reconexión en la plataforma", "Confirmar con el cliente que el servicio funciona"];
 let clients = [];
 let processes = [];
+let customerInvoiceRecords = [];
+let customerInvoiceLoadError = "";
+let customerInvoiceLoading = false;
 let selectedClientId = null;
+let selectedClientHistoryTab = "resumen";
+let selectedInvoiceHistoryStatus = "pending";
 let profileMode = false;
 let editingClientProfileId = null;
 let isAuthenticated = false;
@@ -29,6 +34,7 @@ let currentUserName = "";
 let currentUserIsAdmin = false;
 let stopClientsSync = null;
 let stopProcessesSync = null;
+let stopCustomerInvoiceSync = null;
 let stopAdjustmentZonesSync = null;
 let adjustmentZones = [{ nombre: "Zona general", valor: 15000 }, { nombre: "Zona especial", valor: 20000 }];
 const processSaveErrors = new Map();
@@ -68,6 +74,16 @@ function elapsed(value) {
   return [days ? `${days} d` : "", hours ? `${hours} h` : "", !days && rest ? `${rest} min` : ""].filter(Boolean).join(" ") || "Menos de 1 min";
 }
 function clientName(client) { return String(client.nombre || "Cliente sin nombre"); }
+const clientStatusLabels = { sin_registrar: "Sin registrar", activo: "Activo", suspendido: "Suspendido", retirado: "Retirado", cancelado: "Cancelado" };
+function clientStatus(client) { return clientStatusLabels[client.estadoCliente] || clientStatusLabels.sin_registrar; }
+const profileVisuals = {
+  "Nombre completo": ["👤", "identity"], "Cédula": ["🪪", "identity"], "Estado del servicio": ["●", "status"],
+  "Plan": ["📡", "plan"], "Pago mensual": ["💵", "money"], "Fecha de pago": ["📅", "date"],
+  "Fecha de corte": ["⏳", "warning"], "Generación de factura": ["🧾", "invoice"], "Zona": ["📍", "location"],
+  "Número de contacto": ["📞", "contact"], "Medio de contacto": ["💬", "contact"], "Reajuste reciente": ["💰", "money"],
+  "Registrado por": ["🧑‍💼", "identity"], "Cliente desde": ["🗓️", "date"]
+};
+function profileIcon(label) { return profileVisuals[label] || ["•", "identity"]; }
 function processTypeLabel(type) { return processNames[type] || "Proceso"; }
 function getProcessSteps(item) {
   if (item.tipo === "reconexion") {
@@ -131,7 +147,9 @@ function renderClientProfile(client, latestInformation) {
     ["Medio de contacto", latestInformation.canalContacto],
     ["Reajuste reciente", latestInformation.valorReajuste ? formatCurrency(latestInformation.valorReajuste) : ""]
   ].filter(([, fieldValue]) => fieldValue);
-  return `<section class="client-profile-data" aria-label="Datos del cliente"><div class="client-profile-field"><span>Nombre completo</span><strong>${escapeHtml(clientName(client))}</strong></div><div class="client-profile-field"><span>Cédula</span><strong>${escapeHtml(client.cedula)}</strong></div>${fields.map(([label, fieldValue]) => `<div class="client-profile-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(fieldValue)}</strong></div>`).join("")}<div class="client-profile-field"><span>Registrado por</span><strong>${escapeHtml(client.creadoPorNombre || "Asesor")}</strong></div><div class="client-profile-field"><span>Cliente desde</span><strong>${escapeHtml(formatDate(client.creadoEn))}</strong></div></section>`;
+  const visualField = (label, value) => { const [icon, tone] = profileIcon(label); return `<div class="client-profile-field" data-profile-type="${tone}"><span class="profile-field-label"><i aria-hidden="true">${icon}</i>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`; };
+  const [statusIcon] = profileIcon("Estado del servicio");
+  return `<section class="client-profile-data" aria-label="Datos del cliente">${visualField("Nombre completo", clientName(client))}${visualField("Cédula", client.cedula)}<label class="client-profile-field client-status-inline" data-profile-type="status"><span class="profile-field-label"><i aria-hidden="true">${statusIcon}</i>Estado del servicio</span><select name="estadoCliente" data-client-status class="status-${escapeHtml(client.estadoCliente || "sin_registrar")}">${Object.entries(clientStatusLabels).map(([value, label]) => `<option value="${value}" ${client.estadoCliente === value || (!client.estadoCliente && value === "sin_registrar") ? "selected" : ""}>${label}</option>`).join("")}</select><small id="clientStatusSaveStatus" role="status" aria-live="polite"></small></label>${fields.map(([label, fieldValue]) => visualField(label, fieldValue)).join("")}${visualField("Registrado por", client.creadoPorNombre || "Asesor")}${visualField("Cliente desde", formatDate(client.creadoEn))}</section>`;
 }
 async function saveClientProfile(event) {
   event.preventDefault();
@@ -181,7 +199,35 @@ function processCard(item, showClient = false) {
   const deleteButton = canDelete ? `<button class="delete-process-button" type="button" data-delete-process="${escapeHtml(item.id)}">Eliminar proceso</button>` : "";
   const stepSummary = steps.length ? (currentStep < 0 ? `Todas las ${steps.length} tareas terminadas` : `Tarea ${currentStep + 1} de ${steps.length}: ${steps[currentStep]}`) : "Sin tareas configuradas";
   const detailsButton = steps.length ? `<button class="process-details-button" type="button" data-toggle-process="${escapeHtml(item.id)}" aria-expanded="false">Ver tareas</button>` : "";
-  return `<article class="process-card" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inició: ${escapeHtml(formatDate(item.iniciadoEn))}</span><span>Por: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Lleva ${escapeHtml(elapsed(item.iniciadoEn))}` : `Finalizó: ${escapeHtml(formatDate(item.completadoEn))}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div><p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
+  return `<article class="process-card process-kind-${escapeHtml(item.tipo)}" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inició: ${escapeHtml(formatDate(item.iniciadoEn))}</span><span>Por: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Lleva ${escapeHtml(elapsed(item.iniciadoEn))}` : `Finalizó: ${escapeHtml(formatDate(item.completadoEn))}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div>${processHistorySummary(item)}<p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
+}
+function processHistorySummary(item) {
+  const info = item.informacion || {};
+  const values = [];
+  if (item.tipo === "cambio-plan") values.push(`Plan: ${info.planAnterior || "Anterior sin registro"} → ${info.nuevoPlan || "Pendiente de registrar"}`, `Pago mensual: ${info.valorMensualAnterior == null ? "Sin registro" : formatCurrency(info.valorMensualAnterior)} → ${info.nuevoValorMensual == null ? "Pendiente" : formatCurrency(info.nuevoValorMensual)}`);
+  if (item.tipo === "cambio-fecha-pago") values.push(`Día de pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.nuevoDiaPago ? `día ${info.nuevoDiaPago}` : "Pendiente de registrar"}`);
+  if (item.tipo === "reconexion" && (info.fechaPago || info.nuevaFechaPago)) values.push(`Pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.fechaPago || info.nuevaFechaPago}`);
+  if (item.tipo === "reconexion" && (info.fechaHoraRevisionFactura || info.fechaGeneracionFactura)) values.push(`Revisión de factura: ${info.fechaHoraRevisionFactura || "Sin programar"} · Generación: ${info.fechaGeneracionFactura || "Sin registrar"}`);
+  return values.length ? `<div class="process-history-summary">${values.map(value => `<span>${escapeHtml(value)}</span>`).join("")}</div>` : "";
+}
+function processHistoryTable(list, emptyMessage) {
+  if (!list.length) return `<p class="empty-state">${emptyMessage}</p>`;
+  const sorted = [...list].sort((a, b) => (timestampDate(b.iniciadoEn)?.getTime() || 0) - (timestampDate(a.iniciadoEn)?.getTime() || 0));
+  return `<div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Proceso</th><th>Fecha</th><th>Detalle</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>${sorted.map(item => {
+    const open = item.estado !== "completado";
+    const detail = processHistorySummary(item) || escapeHtml(getProcessSteps(item).find((_, index) => !getCheckedProcessSteps(item).has(index)) || "Proceso completado");
+    return `<tr><td><span class="history-kind history-kind-${escapeHtml(item.tipo)}">${escapeHtml(processTypeLabel(item.tipo))}</span></td><td>${escapeHtml(formatDate(item.iniciadoEn))}</td><td class="history-detail-cell">${detail}</td><td><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></td><td>${escapeHtml(item.iniciadoPorNombre || "Asesor")}</td><td><button class="history-row-button" type="button" data-toggle-history-row="${escapeHtml(item.id)}" aria-expanded="false">Ver</button></td></tr><tr class="history-detail-row" data-history-detail="${escapeHtml(item.id)}" hidden><td colspan="6">${processCard(item)}</td></tr>`;
+  }).join("")}</tbody></table></div>`;
+}
+function renderCustomerInvoiceHistory(client) {
+  const customerId = String(client.cedula || "").trim().toLocaleLowerCase("es");
+  const records = customerInvoiceRecords.filter(record => String(record.cedula || "").trim().toLocaleLowerCase("es") === customerId);
+  const pending = records.filter(record => !record.revisado).sort((a, b) => (timestampDate(a.fechaNotificacion)?.getTime() || 0) - (timestampDate(b.fechaNotificacion)?.getTime() || 0));
+  const reviewed = records.filter(record => record.revisado).sort((a, b) => (timestampDate(b.revisadoEn)?.getTime() || timestampDate(b.fechaNotificacion)?.getTime() || 0) - (timestampDate(a.revisadoEn)?.getTime() || timestampDate(a.fechaNotificacion)?.getTime() || 0));
+  const selected = selectedInvoiceHistoryStatus === "reviewed" ? reviewed : pending;
+  const statusLabel = selectedInvoiceHistoryStatus === "reviewed" ? "Verificada" : "Por verificar";
+  const rows = selected.map(record => `<tr><td>${escapeHtml(formatDate(record.fechaNotificacion))}</td><td>${record.diaPago ? `Día ${escapeHtml(record.diaPago)} · aviso 10 días antes` : "Sin día de pago"}</td><td><span class="invoice-history-status ${record.revisado ? "is-reviewed" : "is-pending"}">${record.revisado ? "Verificada" : "Por verificar"}</span></td><td>${record.revisado ? escapeHtml(formatDate(record.revisadoEn)) : "Pendiente"}</td><td>${escapeHtml(record.revisadoPor || "—")}</td></tr>`).join("");
+  return `<section class="client-history-section client-invoice-history"><div class="client-processes-heading"><div><span class="eyebrow">GENERACIÓN DE FACTURAS</span><h3>Verificaciones de ${escapeHtml(clientName(client))}</h3><p>Se muestran únicamente los registros de esta cédula.</p></div><span class="count-pill">${records.length} ${records.length === 1 ? "registro" : "registros"}</span></div>${customerInvoiceLoadError ? `<p class="empty-state error-state">${escapeHtml(customerInvoiceLoadError)}</p>` : `<div class="invoice-history-filters" role="group" aria-label="Estado de las verificaciones"><button type="button" class="invoice-history-filter ${selectedInvoiceHistoryStatus === "pending" ? "is-active" : ""}" data-invoice-status="pending" aria-pressed="${selectedInvoiceHistoryStatus === "pending"}">Por verificar <span>${pending.length}</span></button><button type="button" class="invoice-history-filter ${selectedInvoiceHistoryStatus === "reviewed" ? "is-active" : ""}" data-invoice-status="reviewed" aria-pressed="${selectedInvoiceHistoryStatus === "reviewed"}">Verificadas <span>${reviewed.length}</span></button></div><div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Fecha y hora para verificar</th><th>Programación de pago</th><th>Estado</th><th>Fecha verificada</th><th>Verificada por</th></tr></thead><tbody>${customerInvoiceLoading ? `<tr><td class="invoice-history-empty" colspan="5">Cargando verificaciones de facturas…</td></tr>` : rows || `<tr><td class="invoice-history-empty" colspan="5">${records.length ? `No hay facturas ${statusLabel.toLocaleLowerCase("es")} para este cliente.` : "Este cliente todavía no tiene verificaciones de facturas."}</td></tr>`}</tbody></table></div>`}</section>`;
 }
 function renderNotifications() {
   const filter = $("#noticeTypeFilter").value;
@@ -208,9 +254,27 @@ function renderClientDetails() {
   const items = processes.filter(item => item.clienteId === client.id && (filterType === "all" || item.tipo === filterType) && (filterStatus === "all" || item.estado === filterStatus)).sort((a, b) => (timestampDate(b.iniciadoEn)?.getTime() || 0) - (timestampDate(a.iniciadoEn)?.getTime() || 0));
   const clientProcesses = processes.filter(item => item.clienteId === client.id);
   const latestInformation = clientProcesses.reduce((latest, item) => !latest || (timestampDate(item.actualizadoEn)?.getTime() || timestampDate(item.iniciadoEn)?.getTime() || 0) > (timestampDate(latest.actualizadoEn)?.getTime() || timestampDate(latest.iniciadoEn)?.getTime() || 0) ? item : latest, null)?.informacion || {};
-  detailsHost.innerHTML = `<div class="client-detail"><header class="client-detail-heading"><div><button class="back-to-client-list" id="backToClientList" type="button">← Volver a clientes</button><span class="eyebrow">FICHA DEL CLIENTE</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula)}</p></div><div class="client-detail-actions"><button id="editClientProfile" class="profile-edit-button" type="button">${editingClientProfileId === client.id ? "Cerrar edición" : "Editar datos"}</button><button id="startAnotherProcess" type="button">＋ Iniciar proceso nuevo</button></div></header>${renderClientProfile(client, latestInformation)}<section class="client-processes"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>Procesos realizados y en curso</h3></div><span class="count-pill">${items.length} ${items.length === 1 ? "proceso" : "procesos"}</span></div><div class="process-filter-row"><select id="clientProcessTypeFilter" aria-label="Filtrar por tipo"><option value="all">Todos los procesos</option><option value="reconexion">Reconexión</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select><select id="clientProcessStatusFilter" aria-label="Filtrar por estado"><option value="all">Todos los estados</option><option value="en_curso">En curso</option><option value="completado">Completados</option></select></div><div class="process-list">${items.length ? items.map(item => processCard(item)).join("") : `<p class="empty-state">Este cliente todavía no tiene procesos con esos filtros.</p>`}</div></section></div>`;
-  $("#clientProcessTypeFilter").value = filterType; $("#clientProcessStatusFilter").value = filterStatus;
-  $("#clientProcessTypeFilter").addEventListener("change", renderClientDetails); $("#clientProcessStatusFilter").addEventListener("change", renderClientDetails);
+  const reconnections = clientProcesses.filter(item => item.tipo === "reconexion");
+  const plans = clientProcesses.filter(item => item.tipo === "cambio-plan");
+  const paymentDates = clientProcesses.filter(item => item.tipo === "cambio-fecha-pago" || (item.tipo === "reconexion" && (item.informacion?.fechaPago || item.informacion?.nuevaFechaPago)));
+  const clientIdForInvoices = String(client.cedula || "").trim().toLocaleLowerCase("es");
+  const invoices = customerInvoiceRecords.filter(record => String(record.cedula || "").trim().toLocaleLowerCase("es") === clientIdForInvoices);
+  const historyPanel = (heading, list, empty) => `<section class="client-history-section"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>${heading}</h3></div><span class="count-pill">${list.length} ${list.length === 1 ? "registro" : "registros"}</span></div>${processHistoryTable(list, empty)}</section>`;
+  const statusColor = client.estadoCliente || "sin_registrar";
+  detailsHost.innerHTML = `<div class="client-detail"><header class="client-detail-heading"><div><button class="back-to-client-list" id="backToClientList" type="button">← Volver a clientes</button><span class="eyebrow">FICHA DEL CLIENTE</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula)}</p></div><div class="client-detail-actions"><span class="client-status-badge status-${escapeHtml(statusColor)}">${escapeHtml(clientStatus(client))}</span><button id="editClientProfile" class="profile-edit-button" type="button">${editingClientProfileId === client.id ? "Cerrar edición" : "Editar datos"}</button><button id="startAnotherProcess" type="button">＋ Iniciar proceso nuevo</button></div></header><nav class="client-history-tabs" role="tablist" aria-label="Historial del cliente">${[["resumen","Resumen",clientProcesses.length],["reconexiones","Reconexiones",reconnections.length],["planes","Cambios de plan",plans.length],["pagos","Fechas de pago",paymentDates.length],["facturas","Generación de facturas",invoices.length]].map(([id,label,count]) => `<button class="client-history-tab ${selectedClientHistoryTab === id ? "is-active" : ""}" type="button" role="tab" aria-selected="${selectedClientHistoryTab === id}" data-client-tab="${id}">${label}<span>${count}</span></button>`).join("")}</nav><div class="client-history-content" role="tabpanel">${selectedClientHistoryTab === "resumen" ? `${renderClientProfile(client, latestInformation)}<section class="client-processes"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>Todos los procesos</h3></div><span class="count-pill">${items.length} ${items.length === 1 ? "proceso" : "procesos"}</span></div><div class="process-filter-row"><select id="clientProcessTypeFilter" aria-label="Filtrar por tipo"><option value="all">Todos los procesos</option><option value="reconexion">Reconexión</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select><select id="clientProcessStatusFilter" aria-label="Filtrar por estado"><option value="all">Todos los estados</option><option value="en_curso">En curso</option><option value="completado">Completados</option></select></div>${processHistoryTable(items, "Este cliente todavía no tiene procesos con esos filtros.")}</section>` : selectedClientHistoryTab === "reconexiones" ? historyPanel("Reconexiones del cliente", reconnections, "Todavía no hay reconexiones registradas.") : selectedClientHistoryTab === "planes" ? historyPanel("Cambios de plan", plans, "Todavía no hay cambios de plan registrados.") : selectedClientHistoryTab === "pagos" ? historyPanel("Cambios en la fecha de pago", paymentDates, "Todavía no hay cambios de fecha de pago registrados.") : renderCustomerInvoiceHistory(client)}</div></div>`;
+  if ($("#clientProcessTypeFilter")) $("#clientProcessTypeFilter").value = filterType;
+  if ($("#clientProcessStatusFilter")) $("#clientProcessStatusFilter").value = filterStatus;
+  $("#clientProcessTypeFilter")?.addEventListener("change", renderClientDetails); $("#clientProcessStatusFilter")?.addEventListener("change", renderClientDetails);
+  detailsHost.querySelectorAll("[data-client-tab]").forEach(button => button.addEventListener("click", () => { selectedClientHistoryTab = button.dataset.clientTab; renderClientDetails(); }));
+  detailsHost.querySelectorAll("[data-invoice-status]").forEach(button => button.addEventListener("click", () => { selectedInvoiceHistoryStatus = button.dataset.invoiceStatus; renderClientDetails(); }));
+  detailsHost.querySelector("[data-client-status]")?.addEventListener("change", saveInlineClientStatus);
+  detailsHost.querySelectorAll("[data-toggle-history-row]").forEach(button => button.addEventListener("click", () => {
+    const row = detailsHost.querySelector(`[data-history-detail="${CSS.escape(button.dataset.toggleHistoryRow)}"]`);
+    if (!row) return;
+    row.hidden = !row.hidden;
+    button.setAttribute("aria-expanded", String(!row.hidden));
+    button.textContent = row.hidden ? "Ver" : "Ocultar";
+  }));
   detailsHost.querySelectorAll("[data-continue-process]").forEach(button => button.addEventListener("click", () => openProcessWizard(button.dataset.continueProcess)));
   detailsHost.querySelectorAll("[data-delete-process]").forEach(button => button.addEventListener("click", () => deleteProcess(button.dataset.deleteProcess)));
   detailsHost.querySelectorAll("[data-toggle-process]").forEach(button => button.addEventListener("click", () => {
@@ -224,8 +288,32 @@ function renderClientDetails() {
   $("#editClientProfile").addEventListener("click", () => { editingClientProfileId = editingClientProfileId === client.id ? null : client.id; renderClientDetails(); });
   $("#cancelClientProfile")?.addEventListener("click", () => { editingClientProfileId = null; renderClientDetails(); });
   $("#clientProfileForm")?.addEventListener("submit", saveClientProfile);
-  $("#startAnotherProcess").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_START_CLIENT_PROCESS", client: { id: client.id, nombre: client.nombre, cedula: client.cedula } }, "*"));
+  $("#startAnotherProcess").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_START_CLIENT_PROCESS", client: { ...client } }, "*"));
   renderClientList(); applyProfileMode();
+}
+async function saveInlineClientStatus(event) {
+  const select = event.currentTarget;
+  const client = clients.find(item => item.id === selectedClientId);
+  const status = $("#clientStatusSaveStatus");
+  if (!client) return;
+  const estadoCliente = select.value;
+  select.disabled = true;
+  if (status) { status.classList.remove("is-error"); status.textContent = "Guardando…"; }
+  try {
+    await window.parent.INTERCOL_FIREBASE.updateClientProfile(client.id, { estadoCliente });
+    clients = clients.map(item => item.id === client.id ? { ...item, estadoCliente } : item);
+    renderClientDetails();
+  } catch (error) {
+    console.error("No se pudo guardar el estado del cliente:", error);
+    select.disabled = false;
+    select.value = client.estadoCliente || "sin_registrar";
+    if (status) {
+      status.classList.add("is-error");
+      status.textContent = error?.code === "permission-denied"
+        ? "Firebase rechazó el cambio. Publica las reglas actualizadas de firestore.rules para que el estado se pueda guardar."
+        : `No se pudo guardar${error?.code ? ` (${error.code})` : ""}. Revisa la conexión e inténtalo de nuevo.`;
+    }
+  }
 }
 async function deleteProcess(processId) {
   const original = processes.find(item => item.id === processId);
@@ -481,7 +569,7 @@ async function completeWizardTask(event) {
     renderClientDetails(); renderNotifications();
   }
 }
-function selectClient(id) { selectedClientId = id; profileMode = true; renderClientDetails(); }
+function selectClient(id) { selectedClientId = id; selectedClientHistoryTab = "resumen"; selectedInvoiceHistoryStatus = "pending"; profileMode = true; renderClientDetails(); }
 $("#clientSearch").addEventListener("input", renderClientList);
 $("#noticeTypeFilter").addEventListener("change", renderNotifications);
 window.addEventListener("message", event => {
@@ -493,7 +581,7 @@ window.addEventListener("message", event => {
   if (event.data?.type === "INTERCOL_AUTH_STATE") {
     const uid = String(event.data.user?.uid || "");
     if (!uid) {
-      isAuthenticated = false; currentUserUid = ""; currentUserName = ""; currentUserIsAdmin = false; stopClientsSync?.(); stopProcessesSync?.(); stopClientsSync = stopProcessesSync = null; clients = []; processes = []; selectedClientId = null; profileMode = false;
+    isAuthenticated = false; currentUserUid = ""; currentUserName = ""; currentUserIsAdmin = false; stopClientsSync?.(); stopProcessesSync?.(); stopCustomerInvoiceSync?.(); stopClientsSync = stopProcessesSync = stopCustomerInvoiceSync = null; clients = []; processes = []; customerInvoiceRecords = []; customerInvoiceLoadError = ""; customerInvoiceLoading = false; selectedClientId = null; profileMode = false;
       $("#syncStatus").textContent = "Inicia sesión para ver los clientes"; clientsHost.innerHTML = `<p class="empty-state">Inicia sesión para consultar las fichas y los procesos.</p>`; notificationsHost.innerHTML = `<p class="empty-state">Inicia sesión para consultar los procesos abiertos.</p>`; renderClientDetails(); return;
     }
     if (!isAuthenticated || currentUserUid !== uid) connectData(uid);
@@ -503,6 +591,8 @@ window.addEventListener("message", event => {
   }
   if (event.data?.type === "INTERCOL_OPEN_CLIENT") {
     selectedClientId = String(event.data.id || "");
+    selectedClientHistoryTab = "resumen";
+    selectedInvoiceHistoryStatus = "pending";
     profileMode = true;
     $("#clientSearch").value = "";
     renderClientList(); renderClientDetails();
@@ -513,12 +603,24 @@ window.addEventListener("message", event => {
   }
 });
 function connectData(uid) {
-  stopClientsSync?.(); stopProcessesSync?.(); stopAdjustmentZonesSync?.();
+  stopClientsSync?.(); stopProcessesSync?.(); stopCustomerInvoiceSync?.(); stopAdjustmentZonesSync?.();
   const firebase = window.parent.INTERCOL_FIREBASE;
   if (!firebase?.subscribeClients || !firebase?.subscribeClientProcesses) { displayError(new Error("Firebase no está disponible"), clientsHost); return; }
   isAuthenticated = true; currentUserUid = uid;
   stopClientsSync = firebase.subscribeClients(items => { clients = items; displayStatus(); renderClientList(); renderClientDetails(); }, error => displayError(error, clientsHost));
   stopProcessesSync = firebase.subscribeClientProcesses(items => { processes = items; displayStatus(); renderNotifications(); renderClientList(); renderClientDetails(); }, error => displayError(error, notificationsHost));
+  customerInvoiceRecords = []; customerInvoiceLoadError = ""; customerInvoiceLoading = true;
+  stopCustomerInvoiceSync = firebase.subscribePaymentNotifications?.(uid, items => {
+    customerInvoiceRecords = items;
+    customerInvoiceLoadError = "";
+    customerInvoiceLoading = false;
+    renderClientDetails();
+  }, error => {
+    console.error("No se pudieron cargar las facturas del cliente:", error);
+    customerInvoiceLoading = false;
+    customerInvoiceLoadError = error?.code === "permission-denied" ? "No tienes permiso para consultar Generación de facturas." : "No se pudieron cargar las verificaciones de facturas.";
+    renderClientDetails();
+  }) || null;
   stopAdjustmentZonesSync = firebase.subscribeAdjustmentZones?.(zones => {
     if (Array.isArray(zones) && zones.length) adjustmentZones = zones.filter(zone => zone?.nombre && Number.isFinite(Number(zone.valor)) && Number(zone.valor) > 0);
     if (selectedClientId) renderClientDetails();
