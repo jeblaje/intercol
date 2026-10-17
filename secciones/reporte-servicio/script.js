@@ -28,6 +28,7 @@ function restoreReportDraft() {
   try {
     const draft = JSON.parse(localStorage.getItem(REPORT_DRAFT_KEY) || "null");
     if (!draft) return;
+    if (draft.values?.noPowerSerial && !draft.values?.noPowerBoxNumber) draft.values.noPowerBoxNumber = draft.values.noPowerSerial;
     for (const [name, savedValue] of Object.entries(draft.values || {})) {
       const fields = form.querySelectorAll(`[name="${CSS.escape(name)}"]`);
       fields.forEach(field => {
@@ -89,6 +90,7 @@ function renderChoiceButtons(containerId, values, selected, name, onChoose) {
 
 function renderControls() {
   const boxType = value("boxType") || "X8";
+  renderChoiceButtons("highBoxTypeChoices", [["X8", "X8"], ["X16", "X16"]], value("highBoxType") || "X8", "highBoxType", () => {});
   renderChoiceButtons("boxTypeChoices", [["X8", "X8"], ["X16", "X16"]], boxType, "boxType", () => {
     selectedPort = 1;
     renderPorts();
@@ -100,13 +102,6 @@ function renderControls() {
   });
   renderChoiceButtons("splitterOrdinalChoices", Array.from({ length: 5 }, (_, i) => [String(i + 1), `${i + 1}°`]), String(selectedSplitterOrdinal), "splitterOrdinalChoice", rank => { selectedSplitterOrdinal = Number(rank); });
   renderChoiceButtons("paidChoices", [["Sí", "Sí"], ["No", "No"]], value("paid") || "Sí", "paid", () => {});
-  renderChoiceButtons("highSplitterCountChoices", Array.from({ length: 5 }, (_, i) => [String(i), String(i)]), value("highSplittersExisting") || "0", "highSplittersExisting", existing => {
-    const next = Math.min(Number(existing) + 1, 5);
-    form.elements.highSplitterOrdinalChoice.value = String(next);
-    renderChoiceButtons("highSplitterOrdinalChoices", Array.from({ length: 5 }, (_, i) => [String(i + 1), `${i + 1}°`]), String(next), "highSplitterOrdinalChoice", () => {});
-  });
-  renderChoiceButtons("highSplitterOrdinalChoices", Array.from({ length: 5 }, (_, i) => [String(i + 1), `${i + 1}°`]), value("highSplitterOrdinalChoice") || "1", "highSplitterOrdinalChoice", () => {});
-  renderPorts("highPortChoices", true);
 }
 
 function renderReport() {
@@ -120,7 +115,8 @@ function renderReport() {
       optionalLine("Cédula", value("noPowerCedula")),
       optionalLine("Dirección", value("noPowerAddress")),
       optionalLine("Barrio", value("noPowerNeighborhood")),
-      optionalLine("SERIAL", value("noPowerSerial")),
+      optionalLine("Número de caja", value("noPowerBoxNumber")),
+      optionalLine("Link", value("noPowerLink")),
       optionalLine("Red", value("noPowerNetwork")),
       optionalLine("Clave", value("noPowerNetworkKey")),
       optionalLine("Ticket", value("noPowerTicket")),
@@ -143,25 +139,21 @@ function renderReport() {
     : "=== REPORTE DE SERVICIO: SPLITTER AUTORIZADO ===";
   outputTitle.textContent = reportTitle.replaceAll("=", "").trim();
   if (isHighPower()) {
-    const highExisting = Number(value("highSplittersExisting")) || 0;
     const highLines = [
       reportTitle,
       "",
       optionalLine("Cliente", value("highCustomerName")),
       optionalLine("Cédula", value("highCedula")),
+      optionalLine("Número de caja", value("highBoxNumber")),
+      optionalLine("Tipo de caja", value("highBoxType")),
       optionalLine("Dirección", value("highAddress")),
       optionalLine("Barrio", value("highNeighborhood")),
-      optionalLine("Red", value("network")),
-      optionalLine("Clave", value("networkKey")),
       optionalLine("Ticket", value("ticket")),
       optionalLine("Pago", value("paid")),
       optionalLine("¿A quién pagó?", value("paidTo")),
       optionalLine("Técnico", value("highTechnician")),
       optionalLine("Link", value("highLink")),
       optionalLine("Anotación", value("highAnnotation")),
-      `Splitters existentes en la caja antes de este: ${highExisting}`,
-      `Splitter que se va a colocar: ${ordinal(Number(value("highSplitterOrdinalChoice")) || highExisting + 1)}`,
-      `Puerto donde se coloca el splitter: ${selectedPort}`,
       optionalLine("Asesor", value("highAdvisor"))
     ].filter(Boolean);
     output.value = highLines.join("\n");
@@ -232,7 +224,6 @@ form.addEventListener("change", event => {
     selectedPort = 1;
     syncMode();
     renderPorts();
-    renderPorts("highPortChoices", true);
     renderControls();
   }
   if (event.target.name === "boxType") renderPorts();
