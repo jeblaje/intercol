@@ -213,7 +213,7 @@ service cloud.firestore {
     match /clientes/{clientId} {
       allow read: if isRegisteredAdvisor();
       allow create: if isRegisteredAdvisor()
-        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'cedulaNormalizada', 'estadoCliente', 'plan', 'valorMensual', 'diaPago', 'diaCorte', 'fechaPago', 'fechaCorte', 'fechaGeneracionFactura', 'zona', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
+        && request.resource.data.keys().hasOnly(['nombre', 'cedula', 'cedulaNormalizada', 'estadoCliente', 'plan', 'valorMensual', 'valorReconexion', 'diaPago', 'diaCorte', 'fechaPago', 'fechaCorte', 'fechaGeneracionFactura', 'zona', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
         && request.resource.data.keys().hasAll(['nombre', 'cedula', 'cedulaNormalizada', 'creadoPorUid', 'creadoPorNombre', 'creadoEn', 'actualizadoEn'])
         && request.resource.data.nombre is string
         && request.resource.data.cedula is string
@@ -222,6 +222,7 @@ service cloud.firestore {
         && request.resource.data.get('estadoCliente', 'sin_registrar') in ['sin_registrar', 'activo', 'suspendido', 'retirado', 'cancelado']
         && (request.resource.data.get('plan', null) == null || request.resource.data.plan is string)
         && (request.resource.data.get('valorMensual', null) == null || (request.resource.data.valorMensual is number && request.resource.data.valorMensual >= 0))
+        && (request.resource.data.get('valorReconexion', null) == null || request.resource.data.valorReconexion in [15000, 20000])
         && (request.resource.data.get('diaPago', null) == null || (request.resource.data.diaPago is int && request.resource.data.diaPago >= 1 && request.resource.data.diaPago <= 31))
         && (request.resource.data.get('diaCorte', null) == null || (request.resource.data.diaCorte is int && request.resource.data.diaCorte >= 1 && request.resource.data.diaCorte <= 31))
         && (request.resource.data.get('zona', null) == null || request.resource.data.zona is string)
@@ -229,10 +230,11 @@ service cloud.firestore {
         && (request.resource.data.get('fechaCorte', null) == null || request.resource.data.fechaCorte is string)
         && (request.resource.data.get('fechaGeneracionFactura', null) == null || request.resource.data.fechaGeneracionFactura is string);
       allow update: if isRegisteredAdvisor()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoCliente', 'plan', 'valorMensual', 'diaPago', 'diaCorte', 'fechaPago', 'fechaCorte', 'fechaGeneracionFactura', 'zona', 'actualizadoEn'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoCliente', 'plan', 'valorMensual', 'valorReconexion', 'diaPago', 'diaCorte', 'fechaPago', 'fechaCorte', 'fechaGeneracionFactura', 'zona', 'actualizadoEn'])
         && request.resource.data.get('estadoCliente', resource.data.get('estadoCliente', 'sin_registrar')) in ['sin_registrar', 'activo', 'suspendido', 'retirado', 'cancelado']
         && (request.resource.data.get('plan', null) == null || request.resource.data.plan is string)
         && (request.resource.data.get('valorMensual', null) == null || (request.resource.data.valorMensual is number && request.resource.data.valorMensual >= 0))
+        && (request.resource.data.get('valorReconexion', null) == null || request.resource.data.valorReconexion in [15000, 20000])
         && (request.resource.data.get('diaPago', null) == null || (request.resource.data.diaPago is int && request.resource.data.diaPago >= 1 && request.resource.data.diaPago <= 31))
         && (request.resource.data.get('diaCorte', null) == null || (request.resource.data.diaCorte is int && request.resource.data.diaCorte >= 1 && request.resource.data.diaCorte <= 31))
         && (request.resource.data.get('zona', null) == null || request.resource.data.zona is string)

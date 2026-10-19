@@ -666,6 +666,8 @@ function renderList() {
         temporaryInput.remove();
         if (!copied) throw new Error("El navegador rechazó la copia.");
       }
+      button.classList.add("copied");
+      window.setTimeout(() => button.classList.remove("copied"), 1800);
       popupStatus.textContent = `Cédula copiada: ${user.cedula}`;
       window.setTimeout(() => { if (popupStatus.textContent === `Cédula copiada: ${user.cedula}`) popupStatus.textContent = ""; }, 1800);
     } catch (error) {

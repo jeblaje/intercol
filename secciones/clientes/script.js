@@ -4,17 +4,16 @@ const notificationsHost = $("#notificationList");
 const detailsHost = $("#clientCardPanel");
 const processNames = { reconexion: "Reconexión", "cambio-fecha-pago": "Cambio de fecha de pago", "cambio-plan": "Cambio de plan" };
 const processStepTemplates = {
-  reconexion: ["Confirmar cliente y forma de contacto", "Seleccionar zona y calcular cuánto cobrar", "Verificar y ajustar las facturas pendientes", "Cambiar la fecha de pago", "Preparar anotación y programar revisión de factura"],
+  reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
   "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
   "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
 };
 const processStepHelp = {
   reconexion: [
-    "Registra desde dónde se comunica el cliente, su número de contacto y si desea continuar. Si había una orden de retiro, confirma que desea continuar.",
-    "Selecciona la zona. Se calcula el reajuste, la comisión de $1.500 y el total. Si llegó por chat, confirma la zona con el cliente.",
-    "Abre el enlace de Wisphub, verifica las facturas y selecciona la acción que realizaste. El sistema calcula el valor según corresponda.",
-    "Actualiza la fecha de pago en Wisphub y registra la fecha que quedó. El sistema calcula el corte dos días después y la generación diez días antes.",
-    "Abre el enlace de anotaciones, copia el texto preparado y marca la tarea. Programa fecha y hora para revisar la generación; se guardará en Generación de facturas."
+    "Selecciona el valor de reconexión que se guardará en la ficha del cliente.",
+    "Abre las facturas pendientes en Wisphub y selecciona si generaste una factura nueva o ajustaste una existente.",
+    "Actualiza la fecha de pago en Wisphub y registra el día del mes que quedó (del 1 al 30).",
+    "Abre las anotaciones en Wisphub, copia el texto preparado y confirma que hiciste la anotación. También puedes programar la revisión de la próxima factura."
   ]
 };
 const legacyReconnectionSteps = ["Confirmar cliente y validar su cédula", "Verificar estado del servicio y motivo de suspensión", "Realizar la reconexión en la plataforma", "Confirmar con el cliente que el servicio funciona"];
@@ -55,6 +54,11 @@ function getWizardContactDraft(processId) {
 function getWizardInformationDraft(processId) {
   try { return JSON.parse(localStorage.getItem(`intercol:process-info:${processId}`) || "{}"); } catch { return {}; }
 }
+function findPendingCustomerInvoice(customerId) {
+  const normalize = value => String(value || "").trim().toLocaleLowerCase("es").replace(/[\s.-]/g, "");
+  const normalizedId = normalize(customerId);
+  return normalizedId ? customerInvoiceRecords.find(record => record.revisado !== true && normalize(record.cedula) === normalizedId) || null : null;
+}
 function setWizardInformationDraft(processId, information) {
   try { localStorage.setItem(`intercol:process-info:${processId}`, JSON.stringify(information)); } catch { /* Firebase remains the durable store when browser storage is unavailable. */ }
 }
@@ -87,22 +91,28 @@ const profileVisuals = {
 function profileIcon(label) { return profileVisuals[label] || ["•", "identity"]; }
 function processTypeLabel(type) { return processNames[type] || "Proceso"; }
 function getProcessSteps(item) {
-  if (item.tipo === "reconexion") {
-    const steps = [...processStepTemplates.reconexion];
-    steps[1] = item.informacion?.canalContacto === "Chat" ? "Consultar zona del cliente y calcular el cobro del chat" : "Confirmar zona y calcular el valor que debe cobrar";
-    return steps;
-  }
+  if (item.tipo === "reconexion") return [...processStepTemplates.reconexion];
   return Array.isArray(item.pasos) && item.pasos.length ? item.pasos : processStepTemplates[item.tipo] || [];
 }
 function getCheckedProcessSteps(item) {
   const saved = new Set(Array.isArray(item.pasosVerificados) ? item.pasosVerificados.map(Number) : []);
-  if (item.tipo !== "reconexion" || !Array.isArray(item.pasos) || item.pasos.length !== 11) return saved;
+  if (item.tipo !== "reconexion" || !Array.isArray(item.pasos)) return saved;
   const migrated = new Set();
-  if (saved.has(0)) migrated.add(0);
-  if (saved.has(2)) migrated.add(1);
-  if (saved.has(1) || saved.has(3)) migrated.add(2);
-  if (saved.has(4)) migrated.add(3);
-  if (saved.has(8) && saved.has(9)) migrated.add(4);
+  if (item.pasos.length === 11) {
+    if (saved.has(1) && saved.has(2)) migrated.add(0);
+    if (saved.has(3)) migrated.add(1);
+    if (saved.has(4)) migrated.add(2);
+    if (saved.has(8) && saved.has(9)) migrated.add(3);
+    return migrated;
+  }
+  if (item.pasos.length === 5) {
+    if (saved.has(1)) migrated.add(0);
+    if (saved.has(2)) migrated.add(1);
+    if (saved.has(3)) migrated.add(2);
+    if (saved.has(4)) migrated.add(3);
+    return migrated;
+  }
+  if (item.pasos.length === 4) return saved;
   return migrated;
 }
 function displayStatus() { $("#syncStatus").className = "sync-indicator ok"; $("#syncStatus").textContent = "Datos sincronizados"; }
@@ -140,7 +150,8 @@ function renderClientProfile(client, latestInformation) {
   const fields = [
     ["Plan", client.plan || "Sin registrar"],
     ["Pago mensual", client.valorMensual !== null && client.valorMensual !== undefined && client.valorMensual !== "" ? formatCurrency(client.valorMensual) : "Sin registrar"],
-    ["Fecha de pago", client.fechaPago || (client.diaPago ? `${client.diaPago} de cada mes` : "Sin registrar")],
+    ["Cobro de reconexión", client.valorReconexion ? formatCurrency(client.valorReconexion) : ""],
+    ["Fecha de pago", client.diaPago ? `${client.diaPago} de cada mes` : (client.fechaPago || "Sin registrar")],
     ["Fecha de corte", client.fechaCorte || (client.diaCorte ? `${client.diaCorte} de cada mes` : "Sin registrar")],
     ["Generación de factura", client.fechaGeneracionFactura || ""],
     ["Zona", savedZone || "Sin registrar"],
@@ -207,7 +218,7 @@ function processHistorySummary(item) {
   const values = [];
   if (item.tipo === "cambio-plan") values.push(`Plan: ${info.planAnterior || "Anterior sin registro"} → ${info.nuevoPlan || "Pendiente de registrar"}`, `Pago mensual: ${info.valorMensualAnterior == null ? "Sin registro" : formatCurrency(info.valorMensualAnterior)} → ${info.nuevoValorMensual == null ? "Pendiente" : formatCurrency(info.nuevoValorMensual)}`);
   if (item.tipo === "cambio-fecha-pago") values.push(`Día de pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.nuevoDiaPago ? `día ${info.nuevoDiaPago}` : "Pendiente de registrar"}`);
-  if (item.tipo === "reconexion" && (info.fechaPago || info.nuevaFechaPago)) values.push(`Pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.fechaPago || info.nuevaFechaPago}`);
+  if (item.tipo === "reconexion" && (info.diaPago || info.fechaPago || info.nuevaFechaPago)) values.push(`Pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.diaPago ? `día ${info.diaPago}` : (info.fechaPago || info.nuevaFechaPago)}`);
   if (item.tipo === "reconexion" && (info.fechaHoraRevisionFactura || info.fechaGeneracionFactura)) values.push(`Revisión de factura: ${info.fechaHoraRevisionFactura || "Sin programar"} · Generación: ${info.fechaGeneracionFactura || "Sin registrar"}`);
   return values.length ? `<div class="process-history-summary">${values.map(value => `<span>${escapeHtml(value)}</span>`).join("")}</div>` : "";
 }
@@ -257,7 +268,7 @@ function renderClientDetails() {
   const latestInformation = clientProcesses.reduce((latest, item) => !latest || (timestampDate(item.actualizadoEn)?.getTime() || timestampDate(item.iniciadoEn)?.getTime() || 0) > (timestampDate(latest.actualizadoEn)?.getTime() || timestampDate(latest.iniciadoEn)?.getTime() || 0) ? item : latest, null)?.informacion || {};
   const reconnections = clientProcesses.filter(item => item.tipo === "reconexion");
   const plans = clientProcesses.filter(item => item.tipo === "cambio-plan");
-  const paymentDates = clientProcesses.filter(item => item.tipo === "cambio-fecha-pago" || (item.tipo === "reconexion" && (item.informacion?.fechaPago || item.informacion?.nuevaFechaPago)));
+  const paymentDates = clientProcesses.filter(item => item.tipo === "cambio-fecha-pago" || (item.tipo === "reconexion" && (item.informacion?.diaPago || item.informacion?.fechaPago || item.informacion?.nuevaFechaPago)));
   const clientIdForInvoices = String(client.cedula || "").trim().toLocaleLowerCase("es");
   const invoices = customerInvoiceRecords.filter(record => String(record.cedula || "").trim().toLocaleLowerCase("es") === clientIdForInvoices);
   const historyPanel = (heading, list, empty) => `<section class="client-history-section"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>${heading}</h3></div><span class="count-pill">${list.length} ${list.length === 1 ? "registro" : "registros"}</span></div>${processHistoryTable(list, empty)}</section>`;
@@ -352,18 +363,13 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   const completed = currentStep < 0 || process.estado === "completado";
   const task = completed ? null : steps[activeStep];
   const help = processStepHelp[process.tipo]?.[activeStep] || "Completa esta tarea antes de continuar con el siguiente paso del proceso.";
-  const information = { ...(process.informacion || {}), cedulaCliente: String(client.cedula || ""), clienteNombre: clientName(client), valorMensualCliente: client.valorMensual ?? 0, ...getWizardInformationDraft(processId) };
+  const information = { ...(process.informacion || {}), cedulaCliente: String(client.cedula || ""), clienteNombre: clientName(client), valorMensualCliente: client.valorMensual ?? 0, valorReconexion: client.valorReconexion ?? process.informacion?.valorReconexion ?? "", diaPago: process.informacion?.diaPago ?? client.diaPago ?? (process.informacion?.fechaPago ? Number(String(process.informacion.fechaPago).slice(-2)) : ""), ...getWizardInformationDraft(processId) };
   const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(activeStep, information) : !completed ? renderClientProfileProcessFields(process, activeStep, information, client) : "";
   dialog.dataset.activeStep = String(activeStep);
-  dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>Proceso completado</h3><p>Se guardaron todas las tareas de ${escapeHtml(processTypeLabel(process.tipo).toLocaleLowerCase("es"))}.</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
+  const completionMessage = process.tipo === "reconexion" ? "¡Listo! El cliente está completo." : `¡Listo! El proceso de ${processTypeLabel(process.tipo).toLocaleLowerCase("es")} está completo.`;
+  const completionNote = information.notificacionFacturaOmitida ? "Ya había una revisión pendiente; no agregué otra a la lista." : `Se guardaron todas las tareas de ${processTypeLabel(process.tipo).toLocaleLowerCase("es")}.`;
+  dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>${escapeHtml(completionMessage)}</h3><p>${escapeHtml(completionNote)}</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
   dialog.querySelectorAll("[data-close-process-wizard]").forEach(button => button.addEventListener("click", () => dialog.close()));
-  dialog.querySelector("[name=zonaReconexion]")?.addEventListener("change", event => {
-    const amountField = dialog.querySelector("[name=valorReajuste]");
-    const selected = adjustmentZones.find(zone => zone.nombre === event.currentTarget.value);
-    if (amountField) amountField.value = selected ? String(selected.valor) : "";
-    updateReajusteSummary(dialog, amountField?.value);
-    setWizardInformationDraft(processId, readWizardInformation(dialog));
-  });
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => setWizardInformationDraft(processId, readWizardInformation(dialog))));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => updateReconnectionSummaries(dialog)));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("change", () => { setWizardInformationDraft(processId, readWizardInformation(dialog)); updateReconnectionSummaries(dialog); }));
@@ -375,30 +381,26 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   if (!dialog.open) dialog.showModal();
 }
 function renderReconnectionStepFields(step, info) {
-  if (step === 0) return `<div class="wizard-form-grid"><label class="wizard-contact-field" for="wizardContactNumber">Número de contacto del cliente<input id="wizardContactNumber" data-process-info name="numeroContacto" type="tel" inputmode="tel" autocomplete="tel" placeholder="Escribe el número de contacto" value="${escapeHtml(info.numeroContacto || "")}" required></label><label class="wizard-contact-field" for="wizardCanalContacto">¿Desde dónde se comunica el cliente?<select id="wizardCanalContacto" data-process-info name="canalContacto" required><option value="">Selecciona el medio de contacto</option>${["Chat", "Llamada", "Técnico", "Otro"].map(option => `<option value="${option}" ${info.canalContacto === option ? "selected" : ""}>${option}</option>`).join("")}</select></label></div>`;
-  if (step === 1) {
-    const zones = adjustmentZones.length ? adjustmentZones : [{ nombre: "Zona general", valor: 15000 }, { nombre: "Zona especial", valor: 20000 }];
-    const selectedZone = info.zonaReconexion || "Zona general";
-    const selectedZoneConfig = zones.find(zone => zone.nombre === selectedZone);
-    const selectedAmount = info.valorReajuste ?? selectedZoneConfig?.valor ?? "";
-    const hasSavedZone = selectedZone && !zones.some(zone => zone.nombre === selectedZone);
-    const options = `${hasSavedZone ? `<option value="${escapeHtml(selectedZone)}" data-valor="${Number(selectedAmount) || 0}" selected>${escapeHtml(selectedZone)}</option>` : ""}${zones.map(zone => `<option value="${escapeHtml(zone.nombre)}" data-valor="${Number(zone.valor)}" ${selectedZone === zone.nombre ? "selected" : ""}>${escapeHtml(zone.nombre)}</option>`).join("")}`;
-    const commission = info.comisionReconexion || "1500";
-    return `<div class="wizard-form-grid"><label class="wizard-contact-field" for="wizardZonaReconexion">¿En qué zona vive el cliente?<select id="wizardZonaReconexion" data-process-info name="zonaReconexion" required>${options}</select></label><label class="wizard-contact-field">Comisión<input data-process-info name="comisionReconexion" type="number" min="0" step="500" value="${escapeHtml(commission)}" required></label><input type="hidden" data-process-info name="valorReajuste" value="${escapeHtml(selectedAmount)}"><p class="wizard-calculated-amount" data-reajuste-summary>${selectedAmount ? `En ${escapeHtml(selectedZone)}: reajuste <strong>${escapeHtml(formatCurrency(selectedAmount))}</strong> + comisión <strong>${escapeHtml(formatCurrency(commission))}</strong> = total <strong>${escapeHtml(formatCurrency(Number(selectedAmount)+Number(commission)))}</strong>.` : "Selecciona una zona para calcular reajuste, comisión y total."}</p></div>`;
+  if (step === 0) {
+    const selectedFee = String(info.valorReconexion ?? "");
+    return `<label class="wizard-contact-field" for="wizardReconnectionFee">Valor de reconexión<select id="wizardReconnectionFee" data-process-info name="valorReconexion" required><option value="">Selecciona cuánto se le cobra</option><option value="15000" ${selectedFee === "15000" ? "selected" : ""}>$15.000</option><option value="20000" ${selectedFee === "20000" ? "selected" : ""}>$20.000</option></select></label>`;
   }
-  if (step === 2) {
+  if (step === 1) {
     return `<a class="wizard-external-link wizard-invoices-link" href="https://wisphub.net/clientes/ver/${encodeURIComponent(clientCedulaForLink(info))}@cibercitywisp/#retab3" target="_blank" rel="noopener noreferrer">Abrir facturas pendientes en Wisphub ↗</a><label class="wizard-contact-field">¿Qué acción realizaste?<select data-process-info name="accionFactura" required><option value="">Selecciona la acción</option>${[["reajuste","Ajusté la factura con solo reajuste (+ comisión)"],["mes_reajuste","Ajusté la factura con mes + reajuste (sin comisión)"],["nueva_reajuste","Generé una factura nueva de reajuste (+ comisión)"]].map(([value,label])=>`<option value="${value}" ${info.accionFactura===value?"selected":""}>${label}</option>`).join("")}</select></label>`;
   }
-  if (step === 3) return `<label class="wizard-contact-field">Fecha de pago que quedó en Wisphub<input data-process-info name="fechaPago" type="date" value="${escapeHtml(info.fechaPago || "")}" required></label><p class="wizard-calculated-amount" data-payment-date-summary></p>`;
-  if (step === 4) {
+  if (step === 2) { const savedDay = info.diaPago ?? (info.fechaPago ? Number(String(info.fechaPago).slice(-2)) : ""); return `<a class="wizard-external-link" href="https://wisphub.net/clientes/ver/${encodeURIComponent(clientCedulaForLink(info))}@cibercitywisp/#retab5" target="_blank" rel="noopener noreferrer">Abrir fecha de pago en Wisphub ↗</a><label class="wizard-contact-field">Día de pago que quedó en Wisphub (1 al 30)<input data-process-info name="diaPago" type="number" inputmode="numeric" min="1" max="30" step="1" value="${escapeHtml(savedDay)}" placeholder="Escribe un número del 1 al 30" required></label><p class="wizard-calculated-amount" data-payment-date-summary></p>`; }
+  if (step === 3) {
     const annotationLink = `https://wisphub.net/clientes/ver/${encodeURIComponent(info.cedulaCliente || "")}@cibercitywisp/#set1`;
     const annotation = buildReconnectionAnnotation(info);
-    return `<p class="wizard-calculated-amount">Anotación lista para copiar:</p><textarea class="wizard-annotation" readonly rows="3">${escapeHtml(annotation)}</textarea><button type="button" class="secondary-button" data-copy-annotation>Copiar anotación</button><a class="wizard-external-link" href="${annotationLink}" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a><label class="wizard-contact-field">Fecha y hora para revisar la generación de factura<input data-process-info name="fechaHoraRevisionFactura" type="datetime-local" value="${escapeHtml(info.fechaHoraRevisionFactura || defaultReminderDate(info.fechaGeneracionFactura || info.fechaPago))}" required></label><label class="wizard-check-confirm"><input data-process-info name="anotacionLista" type="checkbox" value="true" ${info.anotacionLista === "true" ? "checked" : ""} required> Ya hice la anotación en Wisphub</label>`;
+    const advisor = info.asesorReconexion || currentUserName || "";
+    const existingReview = findPendingCustomerInvoice(info.cedulaCliente);
+    const reviewField = existingReview ? `<p class="wizard-calculated-amount">Ya hay una revisión pendiente en la lista. No agregaré otra.</p>` : `<label class="wizard-contact-field">Fecha y hora para revisar la generación de factura<input data-process-info name="fechaHoraRevisionFactura" type="datetime-local" value="${escapeHtml(info.fechaHoraRevisionFactura || defaultReminderDate(info.fechaGeneracionFactura || info.fechaPago || info.diaPago))}"></label>`;
+    return `<fieldset class="wizard-reconnection-payment"><legend>¿Qué paga?</legend><label class="wizard-check-confirm"><input data-process-info name="pagaMes" type="checkbox" value="true" ${info.pagaMes === "true" ? "checked" : ""}> Mes</label><label class="wizard-check-confirm"><input data-process-info name="pagaReajuste" type="checkbox" value="true" ${info.pagaReajuste === "true" ? "checked" : ""}> Reajuste</label></fieldset><div class="wizard-form-grid"><label class="wizard-contact-field">Técnico<input data-process-info name="tecnicoReconexion" value="${escapeHtml(info.tecnicoReconexion || "")}" placeholder="Nombre del técnico" required></label><label class="wizard-contact-field">Asesor<input data-process-info name="asesorReconexion" value="${escapeHtml(advisor)}" placeholder="Nombre del asesor" required></label></div><p class="wizard-calculated-amount">Fecha de pago: día ${escapeHtml(info.diaPago || "—")} de cada mes.</p><p class="wizard-calculated-amount">Texto listo para copiar:</p><textarea class="wizard-annotation" readonly rows="3">${escapeHtml(annotation)}</textarea><button type="button" class="secondary-button" data-copy-annotation>Copiar anotación</button><a class="wizard-external-link" href="${annotationLink}" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a>${reviewField}<label class="wizard-check-confirm"><input data-process-info name="anotacionLista" type="checkbox" value="true" ${info.anotacionLista === "true" ? "checked" : ""} required> Ya hice la anotación en Wisphub</label>`;
   }
   return "";
 }
 function clientCedulaForLink(info) { return info.cedulaCliente || ""; }
-function buildReconnectionAnnotation(info) { const date = new Intl.DateTimeFormat("es-CO").format(new Date()); const total = formatCurrency(info.totalCobrar ?? calculateReconnectionTotal(info)); const d = info.fechaPago ? new Date(`${info.fechaPago}T12:00:00`) : null; const day = d && Number.isFinite(d.getTime()) ? d.getDate() : ""; const contact = info.canalContacto ? ` Contacto por ${info.canalContacto}.` : ""; const zone = info.zonaReconexion ? ` Zona ${info.zonaReconexion}.` : ""; const label={reajuste:"reajuste + comisión",mes_reajuste:"mes + reajuste",nueva_reajuste:"factura nueva de reajuste + comisión"}[info.accionFactura]; const action = label ? ` Acción sobre factura: ${label}.` : ""; return `${date} RECONEXIÓN: ${clientName(clients.find(client => client.cedula === info.cedulaCliente) || {nombre: info.clienteNombre})}.${contact}${zone} Total cobrado: ${total}.${action}${day ? ` Queda con fecha de pago el día ${day} de cada mes.` : ""}`; }
+function buildReconnectionAnnotation(info) { const date = new Intl.DateTimeFormat("es-CO").format(new Date()); const action = info.accionFactura === "nueva_reajuste" ? "Se genera factura nueva" : "Se ajusta factura"; const paidParts = [info.pagaMes === "true" ? "mes" : "", info.pagaReajuste === "true" ? "reajuste" : ""].filter(Boolean).join(" + "); const technician = String(info.tecnicoReconexion || "[técnico]").trim(); const advisor = String(info.asesorReconexion || currentUserName || "[asesor]").trim(); const day = info.diaPago || "[día]"; return `${date} RECONEXION: ${action} cliente paga ${paidParts || "[mes o reajuste]"} a tecnico ${technician} queda con fecha de pago los ${day} de cada mes - ${advisor}`; }
 function calculateReconnectionTotal(info = {}) {
   const reconnect = Number(info.valorReconexion) || 0;
   const adjustment = Number(info.valorReajuste) || 0;
@@ -412,15 +414,31 @@ function calculateReconnectionTotal(info = {}) {
   }
   return reconnect + invoiceTotal;
 }
-function defaultReminderDate(paymentDate) { if (!paymentDate) return ""; return `${paymentDate}T09:00`; }
+function defaultReminderDate(paymentDateOrDay) {
+  if (!paymentDateOrDay) return "";
+  const raw = String(paymentDateOrDay);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T09:00`;
+  const day = Number(paymentDateOrDay);
+  if (!Number.isInteger(day) || day < 1 || day > 30) return "";
+  const now = new Date();
+  const atNine = date => { date.setHours(9, 0, 0, 0); return date; };
+  let payment = new Date(now.getFullYear(), now.getMonth(), day, 12);
+  if (payment <= now) payment = new Date(now.getFullYear(), now.getMonth() + 1, day, 12);
+  let reminder = new Date(payment); reminder.setDate(reminder.getDate() - 10);
+  if (reminder <= now) { payment = new Date(payment.getFullYear(), payment.getMonth() + 1, day, 12); reminder = new Date(payment); reminder.setDate(reminder.getDate() - 10); }
+  atNine(reminder);
+  const iso = `${reminder.getFullYear()}-${String(reminder.getMonth() + 1).padStart(2, "0")}-${String(reminder.getDate()).padStart(2, "0")}`;
+  return `${iso}T09:00`;
+}
 function updateReconnectionSummaries(dialog) {
   const process = processes.find(item => item.id === dialog.dataset.processId);
   const information = { ...(process?.informacion || {}), ...readWizardInformation(dialog), valorMensualCliente: clients.find(item => item.id === process?.clienteId)?.valorMensual ?? 0 };
   const charge = dialog.querySelector("[data-invoice-total]"); if (charge) charge.textContent = formatCurrency(calculateReconnectionTotal(information));
+  const annotation = dialog.querySelector(".wizard-annotation"); if (annotation) annotation.value = buildReconnectionAnnotation(information);
   if (dialog.querySelector("[data-reajuste-summary]")) updateReajusteSummary(dialog, dialog.querySelector('[name="valorReajuste"]')?.value);
-  const date = dialog.querySelector('[name="fechaPago"]')?.value;
+  const day = dialog.querySelector('[name="diaPago"]')?.value;
   const summary = dialog.querySelector("[data-payment-date-summary]");
-  if (summary) { const payment = date ? new Date(`${date}T12:00:00`) : null; if (!payment || !Number.isFinite(payment.getTime())) summary.textContent = "Al guardar la fecha se calcularán automáticamente corte (2 días después) y generación (10 días antes)."; else { const cut = new Date(payment); cut.setDate(cut.getDate()+2); const gen = new Date(payment); gen.setDate(gen.getDate()-10); summary.textContent = `Fecha de corte: ${cut.toLocaleDateString("en-CA")} · Generación de factura: ${gen.toLocaleDateString("en-CA")}`; } }
+  if (summary) summary.textContent = day ? `Se guardará el día ${day} de cada mes en la ficha del cliente.` : "Escribe únicamente el día del mes, entre 1 y 30.";
 }
 function renderClientProfileProcessFields(process, step, info, client) {
   if (process.tipo === "cambio-plan") {
@@ -495,10 +513,14 @@ async function completeWizardTask(event) {
   if (steps.findIndex((_, stepIndex) => !checked.has(stepIndex)) !== index) return;
   const dialog = $("#processStepDialog");
   const fields = [...dialog.querySelectorAll("[data-process-info]")];
-  const missingField = fields.find(field => field.type === "checkbox" ? !field.checked : !field.value.trim());
+  const missingField = fields.find(field => field.required && (field.type === "checkbox" ? !field.checked : !field.value.trim()));
   if (missingField) {
     const status = $(".wizard-status"); if (status) { status.textContent = "Completa los datos de esta tarea antes de continuar."; status.classList.add("is-error"); }
     missingField.focus(); return;
+  }
+  if (process.tipo === "reconexion" && index === 3 && !fields.some(field => ["pagaMes", "pagaReajuste"].includes(field.name) && field.checked)) {
+    const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona si el cliente paga Mes, Reajuste o ambos."; status.classList.add("is-error"); }
+    dialog.querySelector('[name="pagaMes"]')?.focus(); return;
   }
   const contactInput = dialog.querySelector("[name=numeroContacto]");
   await processDetailSaveQueue.catch(() => {});
@@ -517,23 +539,19 @@ async function completeWizardTask(event) {
     const day = Number(informacion.nuevoDiaPago);
     if (!Number.isInteger(day) || day < 1 || day > 31) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra el nuevo día de pago en la tarea anterior para actualizar la ficha."; status.classList.add("is-error"); } return; }
     profileChanges = { diaPago: day };
-  } else if (process.tipo === "reconexion" && index === 1 && String(informacion.zonaReconexion || "").trim()) {
-    const commission = Number(informacion.comisionReconexion);
-    if (!Number.isFinite(commission) || commission < 0) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe una comisión válida."; status.classList.add("is-error"); } return; }
-    informacion.comisionReconexion = commission;
-    profileChanges = { zona: String(informacion.zonaReconexion).trim() };
-  } else if (process.tipo === "reconexion" && index === 2) {
+  } else if (process.tipo === "reconexion" && index === 0) {
+    const fee = Number(informacion.valorReconexion);
+    if (![15000, 20000].includes(fee)) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona $15.000 o $20.000 para guardar el cobro de reconexión."; status.classList.add("is-error"); } return; }
+    informacion.valorReconexion = fee;
+    profileChanges = { valorReconexion: fee };
+  } else if (process.tipo === "reconexion" && index === 1) {
     if (!["reajuste", "mes_reajuste", "nueva_reajuste"].includes(informacion.accionFactura)) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona la acción que realizaste en la factura."; status.classList.add("is-error"); } return; }
     informacion.totalCobrar = calculateReconnectionTotal(informacion);
-  } else if (process.tipo === "reconexion" && index === 3) {
-    const payment = new Date(`${informacion.fechaPago}T12:00:00`);
-    if (!Number.isFinite(payment.getTime())) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona una fecha de pago válida."; status.classList.add("is-error"); } return; }
-    const cutoff = new Date(payment); cutoff.setDate(cutoff.getDate() + 2);
-    const generation = new Date(payment); generation.setDate(generation.getDate() - 10);
-    const isoDay = date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
-    profileChanges = { fechaPago: informacion.fechaPago, fechaCorte: isoDay(cutoff), fechaGeneracionFactura: isoDay(generation), diaPago: payment.getDate(), diaCorte: cutoff.getDate() };
-    informacion.fechaCorte = profileChanges.fechaCorte;
-    informacion.fechaGeneracionFactura = profileChanges.fechaGeneracionFactura;
+  } else if (process.tipo === "reconexion" && index === 2) {
+    const day = Number(informacion.diaPago);
+    if (!Number.isInteger(day) || day < 1 || day > 30) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe únicamente un número del 1 al 30."; status.classList.add("is-error"); } return; }
+    informacion.diaPago = day;
+    profileChanges = { diaPago: day };
   }
   checked.add(index);
   const pasosVerificados = [...checked].sort((a, b) => a - b);
@@ -544,12 +562,23 @@ async function completeWizardTask(event) {
   if (status) status.textContent = "Guardando tarea…";
   try {
     const firebase = window.parent.INTERCOL_FIREBASE;
-    if (process.tipo === "reconexion" && index === 4 && !informacion.notificacionFacturaId) {
-      const reminder = String(informacion.fechaHoraRevisionFactura || "");
-      if (!reminder || new Date(reminder).getTime() <= Date.now()) throw new Error("Elige una fecha y hora futura para recibir el aviso de revisión de factura.");
-      const advisorName = currentUserName || "Asesor";
-      const created = await firebase.createPaymentNotification({ customerName: clientName(clients.find(item => item.id === process.clienteId) || { nombre: process.clienteNombre }), customerId: process.clienteCedula, notificationDate: reminder, paymentDay: informacion.fechaPago ? Number(informacion.fechaPago.slice(-2)) : null, advisorUid: currentUserUid, advisorName, processId });
-      informacion.notificacionFacturaId = created.id;
+    if (process.tipo === "reconexion" && index === 3 && !informacion.notificacionFacturaId) {
+      delete informacion.notificacionFacturaOmitida;
+      const existingReview = findPendingCustomerInvoice(process.clienteCedula);
+      if (existingReview?.processId === processId) informacion.notificacionFacturaId = existingReview.id;
+      else if (existingReview) informacion.notificacionFacturaOmitida = true;
+      else {
+        const reminder = String(informacion.fechaHoraRevisionFactura || "");
+        if (!reminder || new Date(reminder).getTime() <= Date.now()) throw new Error("Elige una fecha y hora futura para agregar una revisión a la lista.");
+        const advisorName = currentUserName || "Asesor";
+        try {
+          const created = await firebase.createPaymentNotification({ customerName: clientName(clients.find(item => item.id === process.clienteId) || { nombre: process.clienteNombre }), customerId: process.clienteCedula, notificationDate: reminder, paymentDay: Number(informacion.diaPago) || (informacion.fechaPago ? Number(informacion.fechaPago.slice(-2)) : null), advisorUid: currentUserUid, advisorName, processId });
+          informacion.notificacionFacturaId = created.id;
+        } catch (error) {
+          if (error?.code !== "invoice-pending-exists") throw error;
+          informacion.notificacionFacturaOmitida = true;
+        }
+      }
     }
     if (profileChanges && firebase.completeClientProfileStep) {
       await firebase.completeClientProfileStep({ clientId: process.clienteId, processId, profile: profileChanges, informacion, pasos: steps, pasosVerificados, estado });

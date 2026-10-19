@@ -18,7 +18,7 @@ window.INTERCOL_SECTIONS = [
     name: "Generación de facturas",
     description: "Programa cuándo verificar que se generó la factura de cada usuario.",
     icon: "◷",
-    path: "secciones/notificaciones-pago/index.html?v=20261019-pending-invoice-per-customer",
+    path: "secciones/notificaciones-pago/index.html?v=20261019-reconexion-cuatro-tareas",
     requiresAuth: true
   },
   {
@@ -41,7 +41,7 @@ window.INTERCOL_SECTIONS = [
     name: "Verificar Caja",
     description: "Herramienta para verificar y cuadrar la caja.",
     icon: "✓",
-    path: "secciones/verificar-caja/index.html?v=20261019-location-save-feedback",
+    path: "secciones/verificar-caja/index.html?v=20261019-reconexion-cuatro-tareas",
     requiresAuth: true
   },
   {
@@ -67,7 +67,7 @@ window.INTERCOL_SECTIONS = [
     name: "Cajas",
     description: "Consulta cada caja, su última verificación y el historial completo.",
     icon: "▤",
-    path: "secciones/cajas/index.html?v=20261019-location-save-feedback",
+    path: "secciones/cajas/index.html?v=20261019-reconexion-cuatro-tareas",
     requiresAuth: true,
     inheritsPermissionsFrom: "verificar-caja"
   },
@@ -76,7 +76,7 @@ window.INTERCOL_SECTIONS = [
     name: "Clientes",
     description: "Consulta fichas de clientes e inicia el seguimiento de sus procesos.",
     icon: "♙",
-    path: "secciones/clientes/index.html?v=20261017-client-create-compat"
+    path: "secciones/clientes/index.html?v=20261019-omitir-revision-duplicada"
   },
   {
     id: "reporte-servicio",

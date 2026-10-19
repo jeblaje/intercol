@@ -317,7 +317,7 @@ export function createClient({ nombre, cedula, user }) {
   const cleanName = String(nombre || "").trim();
   const cleanId = String(cedula || "").trim();
   if (!cleanName || !cleanId) return Promise.reject(new Error("Escribe el nombre y la cédula del cliente."));
-  return addDoc(clients, { nombre: cleanName, cedula: cleanId, cedulaNormalizada: normalizeCustomerId(cleanId), plan: null, valorMensual: null, diaPago: null, diaCorte: null, fechaPago: null, fechaCorte: null, fechaGeneracionFactura: null, zona: null, creadoPorUid: user?.uid || "", creadoPorNombre: String(user?.nombre || ""), creadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
+  return addDoc(clients, { nombre: cleanName, cedula: cleanId, cedulaNormalizada: normalizeCustomerId(cleanId), plan: null, valorMensual: null, valorReconexion: null, diaPago: null, diaCorte: null, fechaPago: null, fechaCorte: null, fechaGeneracionFactura: null, zona: null, creadoPorUid: user?.uid || "", creadoPorNombre: String(user?.nombre || ""), creadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
 }
 export function subscribeClients(onChange, onError) { return onSnapshot(clients, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 function cleanClientProfile(data = {}) {
@@ -333,6 +333,10 @@ function cleanClientProfile(data = {}) {
     const monthly = data.valorMensual === "" || data.valorMensual === null || data.valorMensual === undefined ? null : Number(data.valorMensual);
     profile.valorMensual = Number.isFinite(monthly) && monthly >= 0 ? monthly : null;
   }
+  if (Object.hasOwn(data, "valorReconexion")) {
+    const reconnectFee = data.valorReconexion === "" || data.valorReconexion === null || data.valorReconexion === undefined ? null : Number(data.valorReconexion);
+    profile.valorReconexion = [15000, 20000].includes(reconnectFee) ? reconnectFee : null;
+  }
   if (Object.hasOwn(data, "diaPago")) profile.diaPago = cleanDay(data.diaPago);
   if (Object.hasOwn(data, "diaCorte")) profile.diaCorte = cleanDay(data.diaCorte);
   for (const key of ["fechaPago", "fechaCorte", "fechaGeneracionFactura"]) if (Object.hasOwn(data, key)) { const value = String(data[key] || "").trim(); profile[key] = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null; }
@@ -345,7 +349,7 @@ export function updateClientProfile(id, profile) {
 export function subscribeClientProcesses(onChange, onError) { return onSnapshot(clientProcesses, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 export function createClientProcess({ client, type, user }) {
   const stepsByType = {
-    reconexion: ["Confirmar cliente y forma de contacto", "Revisar facturas pendientes, pagos o abonos", "Consultar zona y calcular el reajuste", "Generar o ajustar la factura", "Actualizar fecha de pago o fecha de espera", "Registrar el técnico que atendió el caso", "Verificar si hubo cambio de plan", "Verificar el ticket de reconexión", "Dejar la anotación del proceso", "Programar revisión de la próxima factura", "Realizar la reconexión y confirmar el servicio"],
+    reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
     "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
     "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
   };
