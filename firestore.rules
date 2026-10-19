@@ -82,11 +82,42 @@ service cloud.firestore {
       allow read: if isRegisteredAdvisor();
       allow create: if signedIn() && hasSectionPermission('verificar-caja', 'crear')
         && (isSystemAdmin() || request.resource.data.asesorUid == request.auth.uid)
-        && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn']);
+        && request.resource.data.keys().hasOnly(['fecha', 'tipoCaja', 'numeroCaja', 'direccion', 'barrio', 'zona', 'notasVerificacion', 'cajaOrigenId', 'tecnico', 'asesor', 'link', 'cedulas', 'asesorUid', 'creadoPor', 'usuarioRegistrado', 'creadoEn'])
+        && (!('barrio' in request.resource.data) || request.resource.data.barrio is string)
+        && (!('zona' in request.resource.data) || request.resource.data.zona is string)
+        && (!('notasVerificacion' in request.resource.data) || (request.resource.data.notasVerificacion is string && request.resource.data.notasVerificacion.size() <= 2000))
+        && (!('cajaOrigenId' in request.resource.data) || request.resource.data.cajaOrigenId is string);
       allow update: if signedIn() && hasSectionPermission('verificar-caja', 'editar')
         && (isSystemAdmin() || hasAdministratorRole() || resource.data.asesorUid == request.auth.uid);
       allow delete: if signedIn() && hasSectionPermission('verificar-caja', 'eliminar')
         && (isSystemAdmin() || hasAdministratorRole() || resource.data.asesorUid == request.auth.uid);
+    }
+    function canManageBoxLocation() {
+      return signedIn() && (hasSectionPermission('verificar-caja', 'crear') || hasSectionPermission('verificar-caja', 'editar'));
+    }
+    match /barriosCajas/{locationId} {
+      allow read: if isRegisteredAdvisor();
+      allow create, update: if canManageBoxLocation()
+        && request.resource.data.keys().hasOnly(['nombre', 'nombreNormalizado', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['nombre', 'nombreNormalizado', 'actualizadoEn'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() > 0
+        && request.resource.data.nombre.size() <= 120
+        && request.resource.data.nombreNormalizado is string
+        && request.resource.data.nombreNormalizado.size() <= 120;
+      allow delete: if false;
+    }
+    match /zonasCajas/{locationId} {
+      allow read: if isRegisteredAdvisor();
+      allow create, update: if canManageBoxLocation()
+        && request.resource.data.keys().hasOnly(['nombre', 'nombreNormalizado', 'actualizadoEn'])
+        && request.resource.data.keys().hasAll(['nombre', 'nombreNormalizado', 'actualizadoEn'])
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() > 0
+        && request.resource.data.nombre.size() <= 120
+        && request.resource.data.nombreNormalizado is string
+        && request.resource.data.nombreNormalizado.size() <= 120;
+      allow delete: if false;
     }
     match /asesores/{advisorUid} {
       allow create: if signedIn() && request.auth.uid == advisorUid

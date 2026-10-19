@@ -8,9 +8,12 @@ export const firestore = getFirestore(firebaseApp);
 export const auth = getAuth(firebaseApp);
 const temporaryMessages = collection(firestore, "smsTemp");
 const paymentNotifications = collection(firestore, "notificacionesPago");
+const normalizeCustomerId = value => String(value ?? "").trim().toLocaleLowerCase("es").replace(/[\s.-]/g, "");
 const retiredRecords = collection(firestore, "retirados");
 const tvRetirementRecords = collection(firestore, "retirosTv");
 const verifiedBoxes = collection(firestore, "cajasVerificadas");
+const boxNeighborhoods = collection(firestore, "barriosCajas");
+const boxZones = collection(firestore, "zonasCajas");
 const clients = collection(firestore, "clientes");
 const clientProcesses = collection(firestore, "procesosClientes");
 const cleanBoxNumberValue = value => {
@@ -18,6 +21,18 @@ const cleanBoxNumberValue = value => {
   const numeric = original.replace(/[^0-9-]/g, "");
   return numeric || original;
 };
+const normalizeBoxLocation = value => String(value ?? "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+const formatBoxLocation = value => String(value ?? "").trim().replace(/\s+/g, " ").toLocaleUpperCase("es");
+const boxLocationId = value => normalizeBoxLocation(value).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || "sin-nombre";
+function addBoxLocationToBatch(batch, collectionName, value) {
+  const nombre = formatBoxLocation(value);
+  if (!nombre) return;
+  batch.set(doc(firestore, collectionName, boxLocationId(nombre)), {
+    nombre,
+    nombreNormalizado: normalizeBoxLocation(nombre),
+    actualizadoEn: serverTimestamp()
+  }, { merge: true });
+}
 const publicSupportConfig = doc(firestore, "configuracionPublica", "equipos");
 const adjustmentZonesConfig = doc(firestore, "configuracionPublica", "zonasReajuste");
 function usernameEmail(username) {
@@ -107,7 +122,24 @@ export function deleteAdvisorRole(roleId) { return deleteDoc(doc(firestore, "rol
 export function assignAdvisorRole(uid, roleId, updatedBy) { return updateDoc(doc(firestore, "asesores", uid), { rol: roleId, rolActualizadoPor: updatedBy, rolActualizadoEn: serverTimestamp() }); }
 export function observeAuth(callback) { return onAuthStateChanged(auth, callback); }
 export function subscribePaymentNotifications(uid, onChange, onError) { return onSnapshot(query(paymentNotifications, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
-export function createPaymentNotification({ customerName, customerId, notificationDate, advisorUid, advisorName, paymentDay = null, processId = "" }) { const data = { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, ...(paymentDay ? { diaPago: paymentDay } : {}), ...(processId ? { processId: String(processId) } : {}), asesorUid: advisorUid, asesor: advisorName, revisado: false, revisadoEn: null, revisadoPor: null, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }; if (!processId) return addDoc(paymentNotifications, data); const id = `reconexion_${String(processId).replace(/[^a-zA-Z0-9_-]/g, "")}`; return setDoc(doc(firestore, "notificacionesPago", id), data).then(() => ({ id })); }
+function pendingInvoiceExistsError() { const error = new Error("Ya hay una revisión pendiente para esta cédula. Verifícala antes de agregar otra."); error.code = "invoice-pending-exists"; return error; }
+async function assertNoPendingInvoice(advisorUid, customerId, exceptId = "") {
+  const normalizedId = normalizeCustomerId(customerId);
+  if (!normalizedId) return;
+  const snapshot = await getDocs(query(paymentNotifications, where("asesorUid", "==", advisorUid)));
+  const duplicate = snapshot.docs.find(item => item.id !== exceptId
+    && item.data().revisado !== true
+    && normalizeCustomerId(item.data().cedula) === normalizedId);
+  if (duplicate) throw pendingInvoiceExistsError();
+}
+export async function createPaymentNotification({ customerName, customerId, notificationDate, advisorUid, advisorName, paymentDay = null, processId = "" }) {
+  await assertNoPendingInvoice(advisorUid, customerId);
+  const data = { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, ...(paymentDay ? { diaPago: paymentDay } : {}), ...(processId ? { processId: String(processId) } : {}), asesorUid: advisorUid, asesor: advisorName, revisado: false, revisadoEn: null, revisadoPor: null, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() };
+  if (!processId) return addDoc(paymentNotifications, data);
+  const id = `reconexion_${String(processId).replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  await setDoc(doc(firestore, "notificacionesPago", id), data);
+  return { id };
+}
 export function subscribeRetiredRecords(uid, onChange, onError) { return onSnapshot(query(retiredRecords, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 export function createRetiredRecord(data) { return addDoc(retiredRecords, { ...data, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
 export function updateRetiredRecord(id, data) { return updateDoc(doc(firestore, "retirados", id), { ...data, actualizadoEn: serverTimestamp() }); }
@@ -116,8 +148,19 @@ export function subscribeTvRetirementRecords(uid, onChange, onError) { return on
 export function createTvRetirementRecord(data) { return addDoc(tvRetirementRecords, { ...data, creadoEn: serverTimestamp(), actualizadoEn: serverTimestamp() }); }
 export function updateTvRetirementRecord(id, data) { return updateDoc(doc(firestore, "retirosTv", id), { ...data, actualizadoEn: serverTimestamp() }); }
 export function deleteTvRetirementRecord(id) { return deleteDoc(doc(firestore, "retirosTv", id)); }
-export function updatePaymentNotification(id, { customerName, customerId, notificationDate }) { return updateDoc(doc(firestore, "notificacionesPago", id), { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, actualizadoEn: serverTimestamp() }); }
-export function setPaymentNotificationReviewed(id, reviewed, advisorName) { return updateDoc(doc(firestore, "notificacionesPago", id), { revisado: reviewed, revisadoEn: reviewed ? Timestamp.now() : null, revisadoPor: reviewed ? advisorName : null, actualizadoEn: serverTimestamp() }); }
+export async function updatePaymentNotification(id, { customerName, customerId, notificationDate }) {
+  const existing = await getDoc(doc(firestore, "notificacionesPago", id));
+  if (existing.exists() && existing.data().revisado !== true) await assertNoPendingInvoice(existing.data().asesorUid, customerId, id);
+  return updateDoc(doc(firestore, "notificacionesPago", id), { nombre: customerName, cedula: customerId, fechaNotificacion: notificationDate, actualizadoEn: serverTimestamp() });
+}
+export async function setPaymentNotificationReviewed(id, reviewed, advisorName) {
+  const recordRef = doc(firestore, "notificacionesPago", id);
+  if (!reviewed) {
+    const existing = await getDoc(recordRef);
+    if (existing.exists()) await assertNoPendingInvoice(existing.data().asesorUid, existing.data().cedula, id);
+  }
+  return updateDoc(recordRef, { revisado: reviewed, revisadoEn: reviewed ? Timestamp.now() : null, revisadoPor: reviewed ? advisorName : null, actualizadoEn: serverTimestamp() });
+}
 export function deletePaymentNotification(id) { return deleteDoc(doc(firestore, "notificacionesPago", id)); }
 function normalizeTemporaryMessage(snapshot) {
   const fields = snapshot.data(); const rawDate = fields.date ?? fields.expiresAt; const expiry = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate); const text = fields.data ?? fields.text;
@@ -128,7 +171,7 @@ export function subscribeTemporaryMessages(onChange, onError) { return onSnapsho
 export function createTemporaryMessage({ text, advisor, expiresAt }) { return addDoc(temporaryMessages, { data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), createdAt: serverTimestamp() }); }
 export function updateTemporaryMessage(id, { text, advisor, expiresAt }) { return updateDoc(doc(firestore, "smsTemp", id), { data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), updatedAt: serverTimestamp() }); }
 export function deleteTemporaryMessage(id) { return deleteDoc(doc(firestore, "smsTemp", id)); }
-export function createVerifiedBox(data) {
+export async function createVerifiedBox(data) {
   // La ficha se arma dentro de un iframe. Reconstruye el arreglo y sus objetos
   // en el contexto principal para que Firestore no reciba arrays de otro realm.
   const cedulas = Array.from(data.cedulas || [], user => ({
@@ -146,6 +189,10 @@ export function createVerifiedBox(data) {
     tipoCaja: String(data.tipoCaja ?? ""),
     numeroCaja: cleanBoxNumberValue(data.numeroCaja),
     direccion: String(data.direccion ?? ""),
+    barrio: formatBoxLocation(data.barrio),
+    zona: formatBoxLocation(data.zona),
+    notasVerificacion: String(data.notasVerificacion ?? "").trim(),
+    ...(data.cajaOrigenId ? { cajaOrigenId: String(data.cajaOrigenId) } : {}),
     tecnico: String(data.tecnico ?? ""),
     asesor: String(data.asesor ?? ""),
     link: String(data.link ?? ""),
@@ -155,7 +202,41 @@ export function createVerifiedBox(data) {
     cedulas,
     creadoEn: serverTimestamp()
   };
-  return addDoc(verifiedBoxes, record);
+  // Older published Firestore rules only allow the original verification
+  // fields on create. Create that compatible base record first, then enrich it
+  // with fields introduced later (box type/location/notes) as a best-effort
+  // update. This keeps an outdated create allowlist from blocking the record.
+  const boxRef = doc(verifiedBoxes);
+  const {
+    tipoCaja,
+    barrio,
+    zona,
+    notasVerificacion,
+    cajaOrigenId,
+    ...baseRecord
+  } = record;
+  await setDoc(boxRef, baseRecord);
+
+  const enrichment = {
+    tipoCaja,
+    barrio,
+    zona,
+    ...(notasVerificacion ? { notasVerificacion } : {}),
+    ...(cajaOrigenId ? { cajaOrigenId } : {})
+  };
+  const detailsSync = updateDoc(boxRef, enrichment).then(() => true).catch(error => {
+    console.warn("La caja se guardó, pero faltó sincronizar tipo, barrio, zona o comentario. Publica las reglas actualizadas de Firestore:", error);
+    return false;
+  });
+
+  const catalog = writeBatch(firestore);
+  addBoxLocationToBatch(catalog, "barriosCajas", record.barrio);
+  addBoxLocationToBatch(catalog, "zonasCajas", record.zona);
+  const locationCatalogSync = catalog.commit().then(() => true).catch(error => {
+    console.warn("La verificación se guardó, pero no se pudieron actualizar los catálogos de barrio/zona:", error);
+    return false;
+  });
+  return { id: boxRef.id, saved: true, detailsSync, locationCatalogSync };
 }
 export function updateVerifiedBox(id, data) {
   const cedulas = Array.from(data.cedulas || [], user => ({
@@ -168,16 +249,32 @@ export function updateVerifiedBox(id, data) {
     estadoServicio: String(user.estadoServicio ?? "active"),
     suspendidoDesde: String(user.suspendidoDesde ?? "")
   }));
-  return updateDoc(doc(firestore, "cajasVerificadas", id), {
+  const record = {
     fecha: String(data.fecha ?? ""),
     tipoCaja: String(data.tipoCaja ?? ""),
     numeroCaja: cleanBoxNumberValue(data.numeroCaja),
     direccion: String(data.direccion ?? ""),
+    barrio: formatBoxLocation(data.barrio),
+    zona: formatBoxLocation(data.zona),
+    notasVerificacion: String(data.notasVerificacion ?? "").trim(),
     tecnico: String(data.tecnico ?? ""),
     asesor: String(data.asesor ?? ""),
     link: String(data.link ?? ""),
     cedulas,
     actualizadoEn: serverTimestamp()
+  };
+  return updateDoc(doc(firestore, "cajasVerificadas", id), record).then(async () => {
+    // Save the box first: missing catalog permissions must not discard its edits.
+    const catalog = writeBatch(firestore);
+    addBoxLocationToBatch(catalog, "barriosCajas", record.barrio);
+    addBoxLocationToBatch(catalog, "zonasCajas", record.zona);
+    try {
+      await catalog.commit();
+      return { locationCatalogSaved: true };
+    } catch (error) {
+      console.warn("La caja se guardó, pero no se pudieron actualizar los catálogos de barrio/zona:", error);
+      return { locationCatalogSaved: false, locationCatalogErrorCode: error?.code || "unknown" };
+    }
   });
 }
 export function updateVerifiedBoxPorts(id, users) {
@@ -195,7 +292,19 @@ export function updateVerifiedBoxPorts(id, users) {
 }
 export function deleteVerifiedBox(id) { return deleteDoc(doc(firestore, "cajasVerificadas", id)); }
 export function subscribeVerifiedBoxes(onChange, onError) { return onSnapshot(verifiedBoxes, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
-const normalizeCustomerId = value => String(value ?? "").trim().toLocaleLowerCase("es").replace(/[\s.-]/g, "");
+export function subscribeBoxLocationOptions(kind, onChange, onError) {
+  const source = kind === "barrio" ? boxNeighborhoods : kind === "zona" ? boxZones : null;
+  if (!source) throw new Error("Catálogo de ubicación desconocido.");
+  return onSnapshot(source, snapshot => {
+    const values = new Map();
+    snapshot.docs.forEach(item => {
+      const name = formatBoxLocation(item.data().nombre);
+      const key = normalizeBoxLocation(name);
+      if (name && !values.has(key)) values.set(key, name);
+    });
+    onChange([...values.values()].sort((a, b) => a.localeCompare(b, "es")));
+  }, onError);
+}
 export function findClientByCedula(value) {
   const normalized = normalizeCustomerId(value);
   if (!normalized) return Promise.resolve(null);
@@ -320,6 +429,6 @@ export function saveAdjustmentZones(zones) {
     .filter(zone => zone.nombre && Number.isFinite(zone.valor) && zone.valor > 0);
   return setDoc(adjustmentZonesConfig, { zonas: cleanZones, actualizadoEn: serverTimestamp() });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribeBoxLocationOptions, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

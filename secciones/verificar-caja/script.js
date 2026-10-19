@@ -36,6 +36,11 @@ let portAutosaveDirty = false;
 let portAutosaveQueue = Promise.resolve();
 let lastPrefilledBoxKey = "";
 let newVerificationFromHistory = false;
+let pendingLegacyBoxOriginId = "";
+let pendingLegacyPrefill = false;
+let pendingLatestVerification = null;
+let stopBoxLocationCatalogs = [];
+const boxLocationOptions = { barrio: [], zona: [] };
 const onuUrl = cedula => `https://intercolwisp.smartolt.com/onu/configured?free_text=${encodeURIComponent(cedula)}&sort_by=id&sort_order=desc`;
 const notesUrl = cedula => `https://wisphub.net/clientes/ver/${encodeURIComponent(cedula)}@cibercitywisp/#set1`;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
@@ -45,12 +50,13 @@ const displayBoxNumber = value => {
 };
 const boxData = () => Object.fromEntries(new FormData(boxForm).entries());
 const portActionFor = user => user?.portAction || (user?.orangeBackground ? "cancelled" : "");
-const serviceStatusFor = user => user?.serviceStatus || user?.estadoServicio || (portActionFor(user) === "cancelled" ? "cancelled" : portActionFor(user) === "notRegistered" ? "notRegistered" : "active");
+const serviceStatusFor = user => user?.serviceStatus || user?.estadoServicio || (portActionFor(user) === "cancelled" ? "cancelled" : portActionFor(user) === "suspended" ? "suspended" : portActionFor(user) === "notRegistered" ? "notRegistered" : "active");
 const serviceStatusText = status => ({ active: "ACTIVO", suspended: "SUSPENDIDO", cancelled: "CANCELADO", notRegistered: "NO REGISTRA" }[status] || "ACTIVO");
 const serviceStatusClass = status => ({ active: "service-active", suspended: "service-suspended", cancelled: "service-cancelled", notRegistered: "service-not-registered" }[status] || "service-active");
 const suspensionDays = value => { const date = /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? new Date(`${value}T12:00:00`) : null; return date && Number.isFinite(date.getTime()) ? Math.max(0, Math.floor((new Date(`${todayIsoDate()}T12:00:00`) - date) / 86400000)) : null; };
 const portActionText = action => ({
   cancelled: "SE TOMA PUERTO CANCELADO",
+  suspended: "SE TOMA PUERTO SUSPENDIDO",
   splitter: "SE COLOCA SPLITTER",
   addressChange: "Cliente cambio de dirección",
   notRegistered: "Cliente no registra"
@@ -90,6 +96,8 @@ function syncVerifiedBoxes() {
   verifiedStatus.textContent = "Cargando cajas guardadas…";
   stopVerifiedBoxSync = firebase.subscribeVerifiedBoxes(items => {
     verifiedBoxes = items.sort((a, b) => timestampMillis(b.creadoEn) - timestampMillis(a.creadoEn));
+    renderBoxLocationOptions("barrio");
+    renderBoxLocationOptions("zona");
     verifiedCount.textContent = `${verifiedBoxes.length} caja${verifiedBoxes.length === 1 ? "" : "s"}`;
     verifiedStatus.textContent = verifiedBoxes.length ? "Selecciona una caja para consultar su ficha." : "Aún no hay cajas verificadas.";
     renderVerifiedBoxes();
@@ -110,6 +118,46 @@ function syncVerifiedBoxes() {
   });
 }
 
+function syncBoxLocationCatalogs() {
+  stopBoxLocationCatalogs.forEach(stop => stop?.());
+  stopBoxLocationCatalogs = [];
+  const firebase = window.parent.INTERCOL_FIREBASE;
+  if (!firebase?.subscribeBoxLocationOptions) return;
+  [["barrio", "#boxNeighborhoodOptions"], ["zona", "#boxZoneOptions"]].forEach(([kind, selector]) => {
+    const datalist = document.querySelector(selector);
+    const stop = firebase.subscribeBoxLocationOptions(kind, values => {
+      boxLocationOptions[kind] = values;
+      renderBoxLocationOptions(kind, datalist);
+    }, error => console.warn(`No se pudo cargar el catálogo de ${kind}:`, error));
+    stopBoxLocationCatalogs.push(stop);
+  });
+}
+
+function renderBoxLocationOptions(kind, datalist = document.querySelector(kind === "barrio" ? "#boxNeighborhoodOptions" : "#boxZoneOptions")) {
+  if (!datalist) return;
+  const field = kind === "barrio" ? "barrio" : "zona";
+  const normalized = new Map();
+  [...boxLocationOptions[kind], ...verifiedBoxes.map(box => box[field])].forEach(value => {
+    const name = String(value || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("es");
+    const key = normalizedLocationInput(name);
+    if (name && key && !normalized.has(key)) normalized.set(key, name);
+  });
+  datalist.replaceChildren(...[...normalized.values()].sort((a, b) => a.localeCompare(b, "es")).map(value => {
+    const option = document.createElement("option"); option.value = value; return option;
+  }));
+}
+
+function normalizedLocationInput(value) {
+  return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+}
+function canonicalizeLocationField(field, kind) {
+  const value = field.value.trim().replace(/\s+/g, " ");
+  if (!value) return;
+  const key = normalizedLocationInput(value);
+  const saved = boxLocationOptions[kind].find(option => normalizedLocationInput(option) === key);
+  field.value = (saved || value).toLocaleUpperCase("es");
+}
+
 function timestampMillis(value) {
   if (value?.toMillis) return value.toMillis();
   if (value?.seconds) return value.seconds * 1000;
@@ -127,7 +175,7 @@ function renderVerifiedBoxes() {
   const type = verifiedType.value;
   const results = verifiedBoxes.filter(box => {
     if (type !== "all" && box.tipoCaja !== type) return false;
-    const searchable = [box.numeroCaja, box.direccion, box.tecnico, box.asesor, box.fecha, box.tipoCaja,
+    const searchable = [box.numeroCaja, box.direccion, box.barrio, box.zona, box.tecnico, box.asesor, box.fecha, box.tipoCaja,
       ...(Array.isArray(box.cedulas) ? box.cedulas.flatMap(user => [user.cedula, user.puertoTecnico, user.puertoReal, user.comentario]) : [])]
       .join(" ").toLocaleLowerCase();
     return searchable.includes(term);
@@ -141,7 +189,7 @@ function renderVerifiedBoxes() {
     button.type = "button";
     button.className = `verified-row ${verifiedDetail.dataset.boxId === box.id ? "selected" : ""}`;
     const title = document.createElement("strong"); title.textContent = `${displayBoxNumber(box.numeroCaja)} · ${String(box.tipoCaja || "").toUpperCase()}`;
-    const summary = document.createElement("span"); summary.textContent = `${box.direccion || "Sin dirección"} · ${box.tecnico || "Sin técnico"} · ${formatBoxDate(box.fecha)}`;
+    const summary = document.createElement("span"); summary.textContent = `${[box.direccion, box.barrio, box.zona].filter(Boolean).join(" · ") || "Sin ubicación"} · ${box.tecnico || "Sin técnico"} · ${formatBoxDate(box.fecha)}`;
     const advisor = document.createElement("span"); advisor.className = "verified-row-advisor"; advisor.textContent = `Asesor: ${box.asesor || "Sin asesor"}`;
     const count = document.createElement("small"); count.textContent = `${Array.isArray(box.cedulas) ? box.cedulas.length : 0} puertos`;
     button.append(title, summary, advisor, count);
@@ -156,14 +204,14 @@ function showVerifiedBox(box) {
   const usersMarkup = (Array.isArray(box.cedulas) ? box.cedulas : []).slice().sort((a, b) => Number(a.puertoTecnico) - Number(b.puertoTecnico)).map(user => {
     const realPort = Number(user.puertoReal) || Number(user.puertoTecnico) || 1;
     const action = user.accionPuerto || (!user.estadoServicio && user.fondoNaranja ? "cancelled" : "");
-    const state = user.estadoServicio || (action === "cancelled" ? "cancelled" : action === "notRegistered" ? "notRegistered" : "active");
+    const state = user.estadoServicio || (action === "cancelled" ? "cancelled" : action === "suspended" ? "suspended" : action === "notRegistered" ? "notRegistered" : "active");
     const stateClass = serviceStatusClass(state);
     const commentClass = action ? ` action-comment-${action === "addressChange" ? "address-change" : action === "notRegistered" ? "not-registered" : action}` : "";
     return `<article class="verified-port ${stateClass}"><div class="verified-port-identity"><strong>${escapeHtml(user.cedula || "")}</strong><span class="service-state-badge">${serviceStatusText(state)}</span></div><div class="verified-port-data"><span>Puerto (lista del técnico): <b>${escapeHtml(user.puertoTecnico ?? "—")}</b></span><span>Puerto real: <b>${realPortLabel(realPort, box.tipoCaja)}</b></span></div>${user.comentario ? `<p class="verified-port-comment${commentClass}">${escapeHtml(user.comentario)}</p>` : ""}</article>`;
   }).join("");
   const canEdit = Boolean(advisorAuth.user && (advisorAuth.isAdmin || box.asesorUid === advisorAuth.user.uid));
   const actions = canEdit ? `<div class="verified-record-actions"><button type="button" class="secondary" id="editVerifiedBox">Editar caja</button><button type="button" class="danger" id="deleteVerifiedBox">Eliminar caja</button></div>` : "";
-  verifiedDetail.innerHTML = `<div class="verified-ficha"><div class="verified-ficha-heading"><div><span class="detail-kicker">FICHA DE CAJA VERIFICADA</span><h3>${escapeHtml(displayBoxNumber(box.numeroCaja))}</h3></div>${safeLink ? `<a class="secondary verified-filter-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : ""}</div>${actions}<dl class="detail-data"><div><dt>Fecha</dt><dd>${escapeHtml(formatBoxDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${escapeHtml(box.direccion || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(box.tecnico || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(box.asesor || "—")}</dd></div></dl><h4>Puertos e identificaciones</h4><div class="verified-port-list">${usersMarkup || '<p class="verified-status">No se guardaron puertos.</p>'}</div></div>`;
+  verifiedDetail.innerHTML = `<div class="verified-ficha"><div class="verified-ficha-heading"><div><span class="detail-kicker">FICHA DE CAJA VERIFICADA</span><h3>${escapeHtml(displayBoxNumber(box.numeroCaja))}</h3></div>${safeLink ? `<a class="secondary verified-filter-link" href="${escapeHtml(safeLink)}" target="_blank" rel="noopener noreferrer">Filtrar caja ↗</a>` : ""}</div>${actions}<dl class="detail-data"><div><dt>Fecha</dt><dd>${escapeHtml(formatBoxDate(box.fecha))}</dd></div><div><dt>Tipo de caja</dt><dd>${escapeHtml(String(box.tipoCaja || "").toUpperCase())}</dd></div><div><dt>Dirección</dt><dd>${escapeHtml(box.direccion || "—")}</dd></div><div><dt>Barrio</dt><dd>${escapeHtml(box.barrio || "—")}</dd></div><div><dt>Zona</dt><dd>${escapeHtml(box.zona || "—")}</dd></div><div><dt>Técnico</dt><dd>${escapeHtml(box.tecnico || "—")}</dd></div><div><dt>Asesor</dt><dd>${escapeHtml(box.asesor || "—")}</dd></div></dl><h4>Puertos e identificaciones</h4><div class="verified-port-list">${usersMarkup || '<p class="verified-status">No se guardaron puertos.</p>'}</div></div>`;
   document.querySelector("#editVerifiedBox")?.addEventListener("click", () => beginVerifiedBoxEdit(box));
   document.querySelector("#deleteVerifiedBox")?.addEventListener("click", () => removeVerifiedBox(box));
   renderVerifiedBoxes();
@@ -180,6 +228,9 @@ function beginVerifiedBoxEdit(box) {
   Array.from(fields.boxType).forEach(input => { input.checked = input.value === box.tipoCaja; });
   fields.boxNumber.value = String(box.numeroCaja || "");
   fields.address.value = String(box.direccion || "");
+  fields.barrio.value = String(box.barrio || "");
+  fields.zona.value = String(box.zona || "");
+  fields.notasVerificacion.value = String(box.notasVerificacion || "");
   fields.technician.value = String(box.tecnico || "");
   fields.advisor.value = String(box.asesor || "");
   fields.link.value = String(box.link || "");
@@ -191,7 +242,7 @@ function beginVerifiedBoxEdit(box) {
     comment: String(user.comentario || ""),
     orangeBackground: Boolean(user.fondoNaranja),
     portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : ""),
-    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active"),
+    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "suspended" ? "suspended" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active"),
     suspendidoDesde: String(user.suspendidoDesde || "")
   })));
   selectedId = users[0]?.id || null;
@@ -300,7 +351,7 @@ function restoreBoxDraft() {
       listOrder: Number.isInteger(Number(user.listOrder)) && Number(user.listOrder) > 0 ? Number(user.listOrder) : index + 1,
       orangeBackground: Boolean(user.orangeBackground),
       portAction: user.portAction || (user.orangeBackground ? "cancelled" : ""),
-      serviceStatus: user.serviceStatus || (user.portAction === "cancelled" || user.orangeBackground ? "cancelled" : user.portAction === "notRegistered" ? "notRegistered" : "active"),
+      serviceStatus: user.serviceStatus || (user.portAction === "cancelled" || user.orangeBackground ? "cancelled" : user.portAction === "suspended" ? "suspended" : user.portAction === "notRegistered" ? "notRegistered" : "active"),
       suspendidoDesde: String(user.suspendidoDesde || "")
     })));
     selectedId = users.some(user => user.id === draft.selectedId) ? draft.selectedId : users[0]?.id || null;
@@ -310,9 +361,24 @@ function restoreBoxDraft() {
 const dateField = document.querySelector("#boxDate");
 const boxLookupStatus = document.querySelector("#boxLookupStatus");
 function setBoxLookupStatus(message, state = "") {
-  boxLookupStatus.textContent = message;
+  pendingLatestVerification = null;
+  boxLookupStatus.replaceChildren(document.createTextNode(message));
   boxLookupStatus.classList.toggle("is-latest", state === "latest");
   boxLookupStatus.classList.toggle("is-new", state === "new");
+}
+function offerLatestVerification(box) {
+  pendingLatestVerification = box;
+  setBoxLookupStatus(`Ya existe una verificación para esta caja (${formatBoxDate(box.fecha)}). Tus datos no se reemplazaron.`, "latest");
+  pendingLatestVerification = box;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "load-previous-verification";
+  button.textContent = "Cargar verificación anterior y reemplazar formulario";
+  button.addEventListener("click", () => {
+    const selected = pendingLatestVerification;
+    if (selected) applyLatestVerification(selected);
+  });
+  boxLookupStatus.append(" ", button);
 }
 const today = new Date();
 dateField.value = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -320,7 +386,7 @@ restoreBoxDraft();
 
 function updateStatus() {
   const data = boxData();
-  const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.technician.trim() && data.advisor.trim();
+  const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim();
   statusText.textContent = ready ? `${data.boxType.toUpperCase()} · ${users.length} cédula${users.length === 1 ? "" : "s"}` : "Completa los datos de la caja";
   markBoxVerifiedButton.disabled = !ready || !users.length;
   markBoxVerifiedButton.textContent = editingVerifiedBoxId ? "Guardar cambios" : "Caja verificada";
@@ -331,7 +397,13 @@ function updateStatus() {
 }
 
 function normalizedBoxNumber(value) {
-  return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  return String(value || "").trim().replace(/^caja\s*/i, "").toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "").replace(/[^a-z0-9-]/g, "");
+}
+function normalizedBoxLocation(value) {
+  return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+}
+function boxIdentityKey(box) {
+  return [normalizedBoxNumber(box.numeroCaja), String(box.tipoCaja || "").toLowerCase(), normalizedBoxLocation(box.barrio), normalizedBoxLocation(box.zona)].join("|");
 }
 
 function todayIsoDate() {
@@ -341,20 +413,22 @@ function todayIsoDate() {
 
 function hasBoxDraftData() {
   const data = boxData();
-  return Boolean(users.length || data.address.trim() || data.technician.trim() || data.link.trim());
+  return Boolean(users.length || data.address.trim() || data.barrio.trim() || data.zona.trim() || data.technician.trim() || data.advisor.trim() || data.link.trim() || data.notasVerificacion.trim());
 }
 
 function applyLatestVerification(box, { confirmReplace = false } = {}) {
   if (!box || !box.numeroCaja) return false;
-  const key = normalizedBoxNumber(box.numeroCaja);
+  const key = boxIdentityKey(box);
   if (key && key === lastPrefilledBoxKey) return true;
-  if (confirmReplace && hasBoxDraftData() && !window.confirm(`Ya hay datos en el formulario. ¿Quieres cargar la última verificación de la caja ${box.numeroCaja} y reemplazarlos?`)) return false;
+  if (confirmReplace && hasBoxDraftData()) { offerLatestVerification(box); return false; }
   resetBoxForm();
   const fields = boxForm.elements;
   fields.date.value = todayIsoDate();
   Array.from(fields.boxType).forEach(input => { input.checked = input.value === box.tipoCaja; });
   fields.boxNumber.value = String(box.numeroCaja || "");
   fields.address.value = String(box.direccion || "");
+  fields.barrio.value = String(box.barrio || "");
+  fields.zona.value = String(box.zona || "");
   fields.technician.value = String(box.tecnico || "");
   fields.advisor.value = String(advisorAuth.profile?.asesor || advisorAuth.profile?.nombre || box.asesor || "");
   fields.link.value = String(box.link || "");
@@ -366,12 +440,14 @@ function applyLatestVerification(box, { confirmReplace = false } = {}) {
     comment: String(user.comentario || ""),
     orangeBackground: Boolean(user.fondoNaranja),
     portAction: user.accionPuerto || (user.fondoNaranja ? "cancelled" : ""),
-    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active"),
+    serviceStatus: user.estadoServicio || (user.accionPuerto === "cancelled" || user.fondoNaranja ? "cancelled" : user.accionPuerto === "suspended" ? "suspended" : user.accionPuerto === "notRegistered" ? "notRegistered" : "active"),
     suspendidoDesde: String(user.suspendidoDesde || "")
   })));
   selectedId = null;
   editingVerifiedBoxId = null;
   lastPrefilledBoxKey = key;
+  pendingLegacyBoxOriginId = String(box.cajaOrigenId || "");
+  pendingLegacyPrefill = Boolean(box.cajaOrigenLegacy);
   newVerificationFromHistory = true;
   cancelBoxEditButton.hidden = false;
   cancelBoxEditButton.textContent = "Cancelar verificación";
@@ -384,31 +460,64 @@ function applyLatestVerification(box, { confirmReplace = false } = {}) {
   return true;
 }
 
-function findLatestVerification(number) {
-  const key = normalizedBoxNumber(number);
+function findLatestVerification(identity) {
+  const key = normalizedBoxNumber(identity.numeroCaja);
   if (!key || ["sinnumero", "nonumero", "na"].includes(key)) return null;
-  return verifiedBoxes.filter(box => normalizedBoxNumber(box.numeroCaja) === key).sort((a, b) => timestampMillis(b.creadoEn) - timestampMillis(a.creadoEn) || String(b.fecha || "").localeCompare(String(a.fecha || "")))[0] || null;
+  return verifiedBoxes.filter(box => normalizedBoxNumber(box.numeroCaja) === key
+    && String(box.tipoCaja || "").toLowerCase() === String(identity.boxType || "").toLowerCase()
+    && normalizedBoxLocation(box.barrio) === normalizedBoxLocation(identity.barrio)
+    && normalizedBoxLocation(box.zona) === normalizedBoxLocation(identity.zona))
+    .sort((a, b) => timestampMillis(b.creadoEn) - timestampMillis(a.creadoEn) || String(b.fecha || "").localeCompare(String(a.fecha || "")))[0] || null;
 }
 
 function lookupExistingBox() {
   if (editingVerifiedBoxId) return;
-  const number = boxForm.elements.boxNumber.value.trim();
-  if (!number) { lastPrefilledBoxKey = ""; setBoxLookupStatus("Al escribir un número guardado, se cargarán los datos de la última verificación."); return; }
-  const latest = findLatestVerification(number);
-  if (!latest) {
-    if (lastPrefilledBoxKey && normalizedBoxNumber(number) !== lastPrefilledBoxKey) {
-      if (!window.confirm(`No existe la caja ${number}. ¿Quieres limpiar los datos de la caja anterior y empezar un registro nuevo?`)) return;
-      resetBoxForm(); boxForm.elements.boxNumber.value = number;
+  const data = boxData();
+  const number = data.boxNumber.trim();
+  if (!number) { setBoxLookupStatus("Completa el número, barrio y zona para buscar la última verificación."); return; }
+  if (["sinnumero", "nonumero", "na"].includes(normalizedBoxNumber(number))) {
+    if (lastPrefilledBoxKey && hasBoxDraftData()) {
+      if (!window.confirm("Las cajas sin número son independientes. ¿Quieres limpiar los datos cargados de la caja anterior?")) return;
+      const type = data.boxType;
+      resetBoxForm();
+      boxForm.elements.boxNumber.value = number;
+      Array.from(boxForm.elements.boxType).forEach(input => { input.checked = input.value === type; });
       updateStatus();
     }
-    lastPrefilledBoxKey = ""; setBoxLookupStatus("No encontramos esta caja; al guardar se registrará como caja nueva.", "new"); return;
+    setBoxLookupStatus("Las cajas sin número se registran de forma independiente."); return;
+  }
+  const sameNumber = verifiedBoxes.filter(box => normalizedBoxNumber(box.numeroCaja) === normalizedBoxNumber(number));
+  if (!data.barrio.trim() || !data.zona.trim()) {
+    setBoxLookupStatus(sameNumber.length ? "Hay cajas con este número. Indica el barrio y la zona para identificar la correcta y cargar su última verificación." : "Indica también el barrio y la zona para registrar esta caja correctamente.");
+    return;
+  }
+  const identity = { numeroCaja: number, boxType: data.boxType, barrio: data.barrio, zona: data.zona };
+  const latest = findLatestVerification(identity);
+  if (!latest) {
+    const [legacyNumber, legacyType] = lastPrefilledBoxKey.split("|");
+    if (pendingLegacyPrefill && pendingLegacyBoxOriginId && normalizedBoxNumber(number) === legacyNumber && String(data.boxType || "").toLowerCase() === legacyType) {
+      setBoxLookupStatus("Esta ficha histórica no tenía barrio ni zona. Se conserva como base; al guardar, el historial quedará vinculado a la ubicación que indiques.", "latest");
+      return;
+    }
+    if (lastPrefilledBoxKey && boxIdentityKey(identity) !== lastPrefilledBoxKey) {
+      if (!window.confirm(`No hay una verificación anterior para la caja ${number} en ${data.barrio}, zona ${data.zona}. ¿Quieres limpiar los datos anteriores y empezar un registro nuevo?`)) return;
+      resetBoxForm();
+      boxForm.elements.boxNumber.value = number;
+      Array.from(boxForm.elements.boxType).forEach(input => { input.checked = input.value === identity.boxType; });
+      boxForm.elements.barrio.value = identity.barrio;
+      boxForm.elements.zona.value = identity.zona;
+      updateStatus();
+    }
+    lastPrefilledBoxKey = "";
+    setBoxLookupStatus(sameNumber.length ? `Hay ${sameNumber.length} verificación(es) con este número en otra ubicación o tipo. No cargamos esos datos para evitar usar la caja equivocada.` : "No encontramos esta caja en este barrio y zona; al guardar se registrará como caja nueva.", "new"); return;
   }
   if (applyLatestVerification(latest, { confirmReplace: true })) setBoxLookupStatus(`Fecha: ${formatBoxDate(latest.fecha)} · La realizó: ${latest.tecnico || "Sin registrar"}. Se cargaron sus datos para iniciar esta nueva verificación.`, "latest");
 }
 
 async function saveVerifiedBox() {
+  const creatingNewVerification = !editingVerifiedBoxId;
   const data = boxData();
-  const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.technician.trim() && data.advisor.trim() && users.length;
+  const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim() && users.length;
   if (!ready) { verifiedStatus.textContent = "Completa los datos generales y agrega al menos una cédula."; return; }
   if (data.link && !safeFilterLink(data.link)) { verifiedStatus.textContent = "El link debe comenzar con http:// o https://."; return; }
   const firebase = window.parent.INTERCOL_FIREBASE;
@@ -430,6 +539,10 @@ async function saveVerifiedBox() {
       tipoCaja: data.boxType,
       numeroCaja: data.boxNumber.trim(),
       direccion: data.address.trim(),
+      barrio: data.barrio.trim().replace(/\s+/g, " ").toLocaleUpperCase("es"),
+      zona: data.zona.trim().replace(/\s+/g, " ").toLocaleUpperCase("es"),
+      notasVerificacion: data.notasVerificacion.trim(),
+      ...(pendingLegacyBoxOriginId ? { cajaOrigenId: pendingLegacyBoxOriginId } : {}),
       tecnico: data.technician.trim(),
       asesor: data.advisor.trim(),
       link: safeFilterLink(data.link),
@@ -452,19 +565,33 @@ async function saveVerifiedBox() {
       if (!canManageVerifiedBox(box)) throw new Error("No tienes permiso para editar esta caja.");
       window.clearTimeout(portAutosaveTimer); portAutosaveTimer = null; portAutosaveDirty = false;
       await portAutosaveQueue;
-      await firebase.updateVerifiedBox(editingVerifiedBoxId, verifiedBoxData);
-      verifiedStatus.textContent = "Cambios guardados. La ficha se actualizó para todos los asesores.";
+      const result = await firebase.updateVerifiedBox(editingVerifiedBoxId, verifiedBoxData);
+      verifiedStatus.textContent = result?.locationCatalogSaved === false
+        ? "La caja se guardó, pero no se pudo actualizar el catálogo de barrios/zonas. Publica las reglas nuevas de Firestore para que aparezcan como sugerencias."
+        : "Cambios guardados. La ficha se actualizó para todos los asesores.";
     } else {
-      await firebase.createVerifiedBox(verifiedBoxData);
-      verifiedStatus.textContent = "Caja verificada y guardada para todos los asesores.";
+      const result = await firebase.createVerifiedBox(verifiedBoxData);
+      verifiedStatus.textContent = "Caja guardada. Confirmando sus datos y los catálogos de barrio/zona…";
+      Promise.all([result?.detailsSync, result?.locationCatalogSync]).then(([detailsSaved, catalogsSaved]) => {
+        if (!detailsSaved || !catalogsSaved) {
+          const missing = [!detailsSaved && "tipo, barrio, zona y comentario", !catalogsSaved && "catálogos de barrio/zona"].filter(Boolean).join(" y ");
+          const warning = `La caja se creó, pero Firebase no guardó ${missing}. Publica las reglas actualizadas de Firestore y vuelve a guardar los datos.`;
+          verifiedStatus.textContent = warning;
+          copyStatus.textContent = warning;
+        } else {
+          verifiedStatus.textContent = "Caja guardada con sus datos y catálogos de barrio/zona.";
+          copyStatus.textContent = "¡Caja verificada y guardada con todos sus datos!";
+        }
+      });
     }
     resetBoxForm();
+    if (creatingNewVerification) copyStatus.textContent = "¡Caja verificada y guardada! El registro ya quedó en el catálogo.";
     document.querySelector("#verifiedTitle").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     console.error("No se pudo guardar la caja verificada:", error);
     const errorCode = String(error?.code || "").replace(/^firestore\//, "");
     verifiedStatus.textContent = errorCode === "permission-denied"
-      ? "Firestore denegó el guardado (permission-denied). Confirma que iniciaste sesión y publica en Firebase Console las reglas de cajasVerificadas."
+      ? "Firestore denegó el guardado (permission-denied). Confirma que iniciaste sesión y publica en Firebase Console las reglas de cajasVerificadas, barriosCajas y zonasCajas."
       : errorCode
         ? `No se pudo guardar (${errorCode}): ${error?.message || "Revisa la conexión con Firebase."}`
         : `No se pudo guardar: ${error?.message || "Comprueba tu conexión e inténtalo de nuevo."}`;
@@ -475,7 +602,7 @@ async function saveVerifiedBox() {
 
 function resetBoxForm() {
   window.clearTimeout(portAutosaveTimer); portAutosaveTimer = null; portAutosaveDirty = false;
-  lastPrefilledBoxKey = ""; newVerificationFromHistory = false;
+  lastPrefilledBoxKey = ""; pendingLegacyBoxOriginId = ""; pendingLegacyPrefill = false; newVerificationFromHistory = false;
   boxForm.reset();
   const resetToday = new Date();
   dateField.value = new Date(resetToday.getTime() - resetToday.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -501,7 +628,7 @@ function cleanCell(value) {
 
 function updateSheetRows() {
   const data = boxData();
-  const ready = Boolean(data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.technician.trim() && data.advisor.trim());
+  const ready = Boolean(data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim());
   copySheetButton.disabled = !ready || !users.length;
   if (!ready) {
     copyStatus.textContent = "Completa los datos generales de la caja.";
@@ -517,12 +644,35 @@ function updateSheetRows() {
 function renderList() {
   users.sort((a, b) => listOrderFor(a) - listOrderFor(b));
   const boxType = boxData().boxType;
-  userList.innerHTML = users.map((user, index) => { const status = serviceStatusFor(user); const stateClass = serviceStatusClass(status); return `<li><div class="user-row-shell"><button class="user-row ${user.id === selectedId ? "selected" : ""} ${stateClass}" type="button" data-user-id="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}"><span class="port-tag">Puerto ${listOrderFor(user, index)}</span><span class="user-id">${escapeHtml(user.cedula)}</span><span class="service-state-badge">${serviceStatusText(status)}</span><span class="port-real-tag">${realPortDisplayLabel(portFor(user), boxType)}</span></button><button class="identity-edit-button" type="button" data-edit-identity="${escapeHtml(user.id)}" title="Editar cédula" aria-label="Editar cédula de ${escapeHtml(user.cedula)}">✎</button><button class="identity-delete-button" type="button" data-delete-user="${escapeHtml(user.id)}" title="Eliminar cédula" aria-label="Eliminar cédula ${escapeHtml(user.cedula)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></button></div></li>`; }).join("");
+  userList.innerHTML = users.map((user, index) => { const status = serviceStatusFor(user); const stateClass = serviceStatusClass(status); return `<li><div class="user-row-shell"><button class="user-row ${user.id === selectedId ? "selected" : ""} ${stateClass}" type="button" data-user-id="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}" title="Haz clic para copiar la cédula y seleccionar el puerto"><span class="port-tag">Puerto ${listOrderFor(user, index)}</span><span class="user-id">${escapeHtml(user.cedula)}</span><span class="service-state-badge">${serviceStatusText(status)}</span><span class="port-real-tag">${realPortDisplayLabel(portFor(user), boxType)}</span></button><button class="identity-edit-button" type="button" data-edit-identity="${escapeHtml(user.id)}" title="Editar cédula" aria-label="Editar cédula de ${escapeHtml(user.cedula)}">✎</button><button class="identity-delete-button" type="button" data-delete-user="${escapeHtml(user.id)}" title="Eliminar cédula" aria-label="Eliminar cédula ${escapeHtml(user.cedula)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg></button></div></li>`; }).join("");
   emptyUsers.hidden = users.length > 0;
   userCount.textContent = `${users.length} registro${users.length === 1 ? "" : "s"}`;
   openAllOnusButton.disabled = users.length === 0;
   if (!users.length) { pendingOnuUsers = []; popupStatus.textContent = ""; openAllOnusButton.textContent = "↗ Todas las ONU"; }
-  userList.querySelectorAll("[data-user-id]").forEach(button => button.addEventListener("click", () => selectUser(button.dataset.userId)));
+  userList.querySelectorAll("[data-user-id]").forEach(button => button.addEventListener("click", async () => {
+    const user = users.find(item => item.id === button.dataset.userId);
+    selectUser(button.dataset.userId);
+    if (!user) return;
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(user.cedula);
+      else {
+        const temporaryInput = document.createElement("textarea");
+        temporaryInput.value = user.cedula;
+        temporaryInput.style.position = "fixed";
+        temporaryInput.style.opacity = "0";
+        document.body.append(temporaryInput);
+        temporaryInput.select();
+        const copied = document.execCommand("copy");
+        temporaryInput.remove();
+        if (!copied) throw new Error("El navegador rechazó la copia.");
+      }
+      popupStatus.textContent = `Cédula copiada: ${user.cedula}`;
+      window.setTimeout(() => { if (popupStatus.textContent === `Cédula copiada: ${user.cedula}`) popupStatus.textContent = ""; }, 1800);
+    } catch (error) {
+      console.warn("No se pudo copiar la cédula:", error);
+      popupStatus.textContent = "No se pudo copiar. Revisa el permiso del portapapeles.";
+    }
+  }));
   userList.querySelectorAll("[data-edit-identity]").forEach(button => button.addEventListener("click", () => startIdentityEdit(button.dataset.editIdentity)));
   userList.querySelectorAll("[data-delete-user]").forEach(button => button.addEventListener("click", () => deleteUser(button.dataset.deleteUser)));
   updateStatus();
@@ -602,7 +752,7 @@ function portCellComment(user) {
   const action = portActionFor(user);
   const comment = String(user.comment || "").trim();
   const parts = [user.cedula];
-  if (["addressChange", "notRegistered"].includes(action)) {
+  if (["addressChange", "notRegistered", "suspended"].includes(action)) {
     const actionText = portActionText(action);
     if (!comment.toLocaleLowerCase().startsWith(actionText.toLocaleLowerCase())) parts.push(actionText);
     if (comment) parts.push(comment);
@@ -633,7 +783,7 @@ function selectUser(id) {
   const currentAction = portActionFor(user);
   const currentStatus = serviceStatusFor(user);
   const actionCommentClass = currentAction ? ` action-${currentAction === "addressChange" ? "address-change" : currentAction === "notRegistered" ? "not-registered" : currentAction}` : "";
-  detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><fieldset class="port-control-group port-action-choices"><legend>Acción del puerto (se agrega al comentario)</legend><label class="port-action-choice neutral ${!currentAction ? "selected" : ""}"><input type="radio" name="portAction" value="" ${!currentAction ? "checked" : ""}><span>Sin acción</span></label><label class="port-action-choice cancelled ${currentAction === "cancelled" ? "selected" : ""}"><input type="radio" name="portAction" value="cancelled" ${currentAction === "cancelled" ? "checked" : ""}><span>Se toma puerto cancelado</span></label><label class="port-action-choice splitter ${currentAction === "splitter" ? "selected" : ""}"><input type="radio" name="portAction" value="splitter" ${currentAction === "splitter" ? "checked" : ""}><span>Se coloca splitter</span></label><label class="port-action-choice address-change ${currentAction === "addressChange" ? "selected" : ""}"><input type="radio" name="portAction" value="addressChange" ${currentAction === "addressChange" ? "checked" : ""}><span>Cliente cambio de dirección</span></label><label class="port-action-choice not-registered ${currentAction === "notRegistered" ? "selected" : ""}"><input type="radio" name="portAction" value="notRegistered" ${currentAction === "notRegistered" ? "checked" : ""}><span>Cliente no registra</span></label></fieldset><section class="port-editor-group comment-editor-group"><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment${actionCommentClass}" placeholder="Escribe un comentario o selecciona una acción">${escapeHtml(user.comment || "")}</textarea></section><fieldset class="port-control-group port-action-choices service-status-choices"><legend>Estado del servicio (define el color del puerto)</legend><label class="port-action-choice service-active ${currentStatus === "active" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="active" ${currentStatus === "active" ? "checked" : ""}><span>Activo</span></label><label class="port-action-choice service-suspended ${currentStatus === "suspended" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="suspended" ${currentStatus === "suspended" ? "checked" : ""}><span>Suspendido</span></label><label class="port-action-choice service-cancelled ${currentStatus === "cancelled" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="cancelled" ${currentStatus === "cancelled" ? "checked" : ""}><span>Cancelado</span></label><label class="port-action-choice service-not-registered ${currentStatus === "notRegistered" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="notRegistered" ${currentStatus === "notRegistered" ? "checked" : ""}><span>No registra</span></label></fieldset><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
+  detailPanel.innerHTML = `<div class="user-detail"><span class="detail-kicker">DETALLE DE IDENTIFICACIÓN</span><h3>${escapeHtml(user.cedula)}</h3><fieldset class="port-control-group port-action-choices"><legend>Acción del puerto (se agrega al comentario)</legend><label class="port-action-choice neutral ${!currentAction ? "selected" : ""}"><input type="radio" name="portAction" value="" ${!currentAction ? "checked" : ""}><span>Sin acción</span></label><label class="port-action-choice cancelled ${currentAction === "cancelled" ? "selected" : ""}"><input type="radio" name="portAction" value="cancelled" ${currentAction === "cancelled" ? "checked" : ""}><span>Se toma puerto cancelado</span></label><label class="port-action-choice suspended ${currentAction === "suspended" ? "selected" : ""}"><input type="radio" name="portAction" value="suspended" ${currentAction === "suspended" ? "checked" : ""}><span>Se toma puerto suspendido</span></label><label class="port-action-choice splitter ${currentAction === "splitter" ? "selected" : ""}"><input type="radio" name="portAction" value="splitter" ${currentAction === "splitter" ? "checked" : ""}><span>Se coloca splitter</span></label><label class="port-action-choice address-change ${currentAction === "addressChange" ? "selected" : ""}"><input type="radio" name="portAction" value="addressChange" ${currentAction === "addressChange" ? "checked" : ""}><span>Cliente cambio de dirección</span></label><label class="port-action-choice not-registered ${currentAction === "notRegistered" ? "selected" : ""}"><input type="radio" name="portAction" value="notRegistered" ${currentAction === "notRegistered" ? "checked" : ""}><span>Cliente no registra</span></label></fieldset><section class="port-editor-group comment-editor-group"><label class="comment-label" for="portComment">Comentario de este puerto</label><textarea id="portComment" class="port-comment${actionCommentClass}" placeholder="Escribe un comentario o selecciona una acción">${escapeHtml(user.comment || "")}</textarea></section><fieldset class="port-control-group port-action-choices service-status-choices"><legend>Estado del servicio (define el color del puerto)</legend><label class="port-action-choice service-active ${currentStatus === "active" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="active" ${currentStatus === "active" ? "checked" : ""}><span>Activo</span></label><label class="port-action-choice service-suspended ${currentStatus === "suspended" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="suspended" ${currentStatus === "suspended" ? "checked" : ""}><span>Suspendido</span></label><label class="port-action-choice service-cancelled ${currentStatus === "cancelled" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="cancelled" ${currentStatus === "cancelled" ? "checked" : ""}><span>Cancelado</span></label><label class="port-action-choice service-not-registered ${currentStatus === "notRegistered" ? "selected" : ""}"><input type="radio" name="serviceStatus" value="notRegistered" ${currentStatus === "notRegistered" ? "checked" : ""}><span>No registra</span></label></fieldset><nav class="detail-links" aria-label="Detalles del usuario">${links}</nav></div>`;
   if (currentStatus === "suspended") {
     const days = suspensionDays(user.suspendidoDesde);
     const suspension = document.createElement("section");
@@ -644,9 +794,9 @@ function selectUser(id) {
   }
   const editForm = document.createElement("form");
   editForm.className = "record-edit-form";
-  editForm.innerHTML = `<label for="editIdentity">Cédula o dirección</label><input id="editIdentity" name="identity" required value="${escapeHtml(user.cedula)}"><label for="editPort">Puerto real (1–${data.boxType === "x16" ? "16" : "8"})</label><input id="editPort" name="port" type="number" min="1" max="${data.boxType === "x16" ? "16" : "8"}" step="1" required value="${portFor(user)}"><button type="submit" class="secondary">Guardar cambios</button>`;
+  editForm.innerHTML = `<label for="editIdentity">Cédula o dirección</label><input id="editIdentity" name="identity" required value="${escapeHtml(user.cedula)}"><label for="editPort">Puerto real (1–21)</label><input id="editPort" name="port" type="number" min="1" max="21" step="1" required value="${portFor(user)}"><button type="submit" class="secondary">Guardar cambios</button>`;
   detailPanel.querySelector(".user-detail").insertBefore(editForm, detailPanel.querySelector(".detail-links"));
-  editForm.addEventListener("submit", event => { event.preventDefault(); const identity = editForm.elements.identity.value.trim(); const port = Number(editForm.elements.port.value); const maxPort = data.boxType === "x16" ? 16 : 8; if (!identity || !Number.isInteger(port) || port < 1 || port > maxPort) return; if (users.some(item => item.id !== user.id && item.cedula.toLocaleLowerCase() === identity.toLocaleLowerCase())) { inlineError.textContent = "Ese dato ya está registrado."; return; } user.cedula = identity; user.port = port; inlineError.textContent = ""; schedulePortAutosave(); selectUser(user.id); });
+  editForm.addEventListener("submit", event => { event.preventDefault(); const identity = editForm.elements.identity.value.trim(); const port = Number(editForm.elements.port.value); if (!identity || !Number.isInteger(port) || port < 1 || port > 21) return; if (users.some(item => item.id !== user.id && item.cedula.toLocaleLowerCase() === identity.toLocaleLowerCase())) { inlineError.textContent = "Ese dato ya está registrado."; return; } user.cedula = identity; user.port = port; inlineError.textContent = ""; schedulePortAutosave(); selectUser(user.id); });
   detailPanel.querySelector("#portComment").addEventListener("input", event => {
     user.comment = event.target.value;
     updateSheetRows();
@@ -654,6 +804,10 @@ function selectUser(id) {
   });
   detailPanel.querySelectorAll('input[name="portAction"]').forEach(input => input.addEventListener("change", event => {
     changePortAction(user, event.target.value);
+    if (event.target.value === "suspended") {
+      user.serviceStatus = "suspended";
+      user.suspendidoDesde ||= todayIsoDate();
+    }
     detailPanel.querySelector("#portComment").value = user.comment;
     detailPanel.querySelector("#portComment").className = `port-comment${event.target.value ? ` action-${event.target.value === "addressChange" ? "address-change" : event.target.value === "notRegistered" ? "not-registered" : event.target.value}` : ""}`;
     schedulePortAutosave();
@@ -717,6 +871,9 @@ boxForm.addEventListener("input", () => {
   if (selectedId) selectUser(selectedId);
   else updatePortAnnotation();
 });
+
+boxForm.elements.barrio.addEventListener("blur", () => { canonicalizeLocationField(boxForm.elements.barrio, "barrio"); updateStatus(); });
+boxForm.elements.zona.addEventListener("blur", () => { canonicalizeLocationField(boxForm.elements.zona, "zona"); updateStatus(); });
 
 document.querySelector("#clearUsers").addEventListener("click", () => {
   if (portAutosaveDirty) persistPortChanges();
@@ -799,7 +956,12 @@ cancelBoxEditButton.addEventListener("click", () => {
   resetBoxForm();
   copyStatus.textContent = "Edición cancelada. Puedes empezar otra caja.";
 });
-boxForm.elements.boxNumber.addEventListener("change", lookupExistingBox);
+[
+  boxForm.elements.boxNumber,
+  boxForm.elements.barrio,
+  boxForm.elements.zona,
+  ...Array.from(boxForm.elements.boxType)
+].forEach(field => field.addEventListener("change", lookupExistingBox));
 verifiedSearch.addEventListener("input", renderVerifiedBoxes);
 verifiedType.addEventListener("change", renderVerifiedBoxes);
 document.querySelector("#openPublicVerifiedList").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_OPEN_VERIFIED_BOXES" }, "*"));
@@ -849,6 +1011,7 @@ window.addEventListener("message", event => {
     advisorAuth = { user: event.data.user || null, profile: event.data.profile || null, isAdmin: Boolean(event.data.isAdmin) };
     if (previousUid !== advisorAuth.user?.uid || previouslyReady !== Boolean(advisorAuth.user && advisorAuth.profile)) syncVerifiedBoxes();
     else renderVerifiedBoxes();
+    syncBoxLocationCatalogs();
   }
   if (event.data?.type === "INTERCOL_EDIT_VERIFIED_BOX") {
     const id = String(event.data.id || "");
@@ -864,6 +1027,7 @@ window.addEventListener("message", event => {
 });
 window.parent.postMessage({ type: "INTERCOL_SECTION_READY" }, "*");
 window.parent.addEventListener("intercol-firebase-ready", syncVerifiedBoxes);
+window.parent.addEventListener("intercol-firebase-ready", syncBoxLocationCatalogs);
 
 const resizeSection = () => window.parent.postMessage({ type: "INTERCOL_SECTION_RESIZE", height: document.documentElement.scrollHeight }, "*");
 new ResizeObserver(resizeSection).observe(document.documentElement);
@@ -871,6 +1035,7 @@ renderList();
 if (selectedId) selectUser(selectedId);
 else updatePortAnnotation();
 syncVerifiedBoxes();
+syncBoxLocationCatalogs();
 window.addEventListener("load", resizeSection);
 setTimeout(resizeSection, 80);
 renderVerifiedBoxes();

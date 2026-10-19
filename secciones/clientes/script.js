@@ -41,6 +41,7 @@ const processSaveErrors = new Map();
 let processDetailSaveQueue = Promise.resolve();
 function processWriteErrorMessage(error, subject) {
   console.error(`No se pudo ${subject} del proceso:`, error);
+  if (error?.code === "invoice-pending-exists") return error.message;
   if (error?.code === "permission-denied") return `Firebase no autorizó ${subject}. Publica las reglas actualizadas de procesosClientes.`;
   if (error?.code === "unauthenticated") return "Tu sesión de Firebase venció. Inicia sesión de nuevo y vuelve a intentarlo.";
   if (["unavailable", "deadline-exceeded", "network-request-failed"].includes(error?.code)) return "Firebase no está disponible por ahora. Revisa tu conexión e inténtalo otra vez.";
