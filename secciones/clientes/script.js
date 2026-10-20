@@ -41,7 +41,7 @@ const processStepHelp = {
   reconexion: [
     "Selecciona el valor de reconexión que se guardará en la ficha del cliente.",
     "Abre las facturas pendientes en Wisphub y selecciona si generaste una factura nueva o ajustaste una existente.",
-    "Actualiza la fecha de pago en Wisphub y registra el día del mes que quedó (del 1 al 30). El corte se calculará dos días después, también dentro del ciclo del 1 al 30.",
+    "Actualiza la fecha de pago en Wisphub y registra el día que quedó. Si conoces la fecha de pago anterior, puedes anotarla; es opcional. El corte se calculará dos días después, dentro del ciclo del 1 al 30.",
     "Abre las anotaciones en Wisphub, copia el texto preparado y confirma que hiciste la anotación. También puedes programar la revisión de la próxima factura."
   ],
   abono: [
@@ -532,7 +532,7 @@ function renderReconnectionStepFields(process, step, info, client) {
   if (step === 1) {
     return `<a class="wizard-external-link wizard-invoices-link" href="https://wisphub.net/clientes/ver/${encodeURIComponent(clientCedulaForLink(info))}@cibercitywisp/#retab3" target="_blank" rel="noopener noreferrer">Abrir facturas pendientes en Wisphub ↗</a><label class="wizard-contact-field">¿Qué acción realizaste?<select data-process-info name="accionFactura" required><option value="">Selecciona la acción</option>${[["reajuste","Ajusté la factura con solo reajuste (+ comisión)"],["mes_reajuste","Ajusté la factura con mes + reajuste (sin comisión)"],["nueva_reajuste","Generé una factura nueva de reajuste (+ comisión)"]].map(([value,label])=>`<option value="${value}" ${info.accionFactura===value?"selected":""}>${label}</option>`).join("")}</select></label>`;
   }
-  if (step === 2) { const savedDay = info.diaPago ?? (info.fechaPago ? Number(String(info.fechaPago).slice(-2)) : ""); return `<a class="wizard-external-link" href="https://wisphub.net/clientes/ver/${encodeURIComponent(clientCedulaForLink(info))}@cibercitywisp/#retab5" target="_blank" rel="noopener noreferrer">Abrir fecha de pago en Wisphub ↗</a><label class="wizard-contact-field">Día de pago que quedó en Wisphub (1 al 30)<input data-process-info name="diaPago" type="number" inputmode="numeric" min="1" max="30" step="1" value="${escapeHtml(savedDay)}" placeholder="Escribe un número del 1 al 30" required></label><p class="wizard-calculated-amount" data-payment-date-summary></p>`; }
+  if (step === 2) { const savedDay = info.diaPago ?? (info.fechaPago ? Number(String(info.fechaPago).slice(-2)) : ""); return `<a class="wizard-external-link" href="https://wisphub.net/clientes/ver/${encodeURIComponent(clientCedulaForLink(info))}@cibercitywisp/#retab5" target="_blank" rel="noopener noreferrer">Abrir fecha de pago en Wisphub ↗</a><label class="wizard-contact-field">Fecha de pago anterior (opcional)<input data-process-info name="fechaPagoAnterior" type="date" value="${escapeHtml(info.fechaPagoAnterior || "")}"></label><label class="wizard-contact-field">Día de pago que quedó en Wisphub (1 al 30)<input data-process-info name="diaPago" type="number" inputmode="numeric" min="1" max="30" step="1" value="${escapeHtml(savedDay)}" placeholder="Escribe un número del 1 al 30" required></label><p class="wizard-calculated-amount" data-payment-date-summary></p>`; }
   if (step === 3) {
     const annotationLink = `https://wisphub.net/clientes/ver/${encodeURIComponent(info.cedulaCliente || "")}@cibercitywisp/#set1`;
     const annotation = buildReconnectionAnnotation(info);

@@ -76,7 +76,7 @@ window.INTERCOL_SECTIONS = [
     name: "Clientes",
     description: "Consulta fichas de clientes e inicia el seguimiento de sus procesos.",
     icon: "♙",
-    path: "secciones/clientes/index.html?v=20261020-abono-proceso"
+    path: "secciones/clientes/index.html?v=20261020-fecha-pago-anterior"
   },
   {
     id: "reporte-servicio",
