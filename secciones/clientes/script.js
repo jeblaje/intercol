@@ -2,11 +2,12 @@ const $ = selector => document.querySelector(selector);
 const clientsHost = $("#clientList");
 const notificationsHost = $("#notificationList");
 const detailsHost = $("#clientCardPanel");
-const processNames = { reconexion: "Reconexión", "cambio-fecha-pago": "Cambio de fecha de pago", "cambio-plan": "Cambio de plan" };
+const processNames = { reconexion: "Reconexión", abono: "Abono", "cambio-fecha-pago": "Cambio de fecha de pago", "cambio-plan": "Cambio de plan" };
 const processStepTemplates = {
   reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
   "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
-  "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
+  "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"],
+  abono: ["Genera la factura de abono con comisión", "Registra la promesa de pago y espera hasta la fecha acordada", "Confirma si el cliente pagó la factura de abono", "Haz la anotación del abono", "Aplica el descuento a la factura correspondiente"]
 };
 const cancelledReconnectionSteps = [
   "Haz la anotación con los datos de la imagen",
@@ -42,6 +43,13 @@ const processStepHelp = {
     "Abre las facturas pendientes en Wisphub y selecciona si generaste una factura nueva o ajustaste una existente.",
     "Actualiza la fecha de pago en Wisphub y registra el día del mes que quedó (del 1 al 30). El corte se calculará dos días después, también dentro del ciclo del 1 al 30.",
     "Abre las anotaciones en Wisphub, copia el texto preparado y confirma que hiciste la anotación. También puedes programar la revisión de la próxima factura."
+  ],
+  abono: [
+    "Genera la factura con comisión y registra el número de la factura que recibirá el abono. El enlace abre el historial de pagos.",
+    "Registra la promesa de pago hasta la fecha límite. Revisa el historial de pagos cada día mientras el proceso siga abierto.",
+    "Revisa el historial de pagos. Si todavía no pagó, el proceso no se podrá cerrar antes de la fecha límite. Después de revisar si pagó o no, registra la anotación.",
+    "Después de confirmar el resultado del pago, registra esta anotación en Wisphub, haya pagado o no.",
+    "Si el cliente pagó, abre la factura indicada y aplica el descuento correspondiente."
   ]
 };
 const legacyReconnectionSteps = ["Confirmar cliente y validar su cédula", "Verificar estado del servicio y motivo de suspensión", "Realizar la reconexión en la plataforma", "Confirmar con el cliente que el servicio funciona"];
@@ -135,10 +143,13 @@ const profileVisuals = {
 function profileIcon(label) { return profileVisuals[label] || ["•", "identity"]; }
 function processTypeLabel(type, information = {}) { return type === "reconexion" && information.reconexionClienteCancelado === true ? "Reconexión cliente cancelado" : processNames[type] || "Proceso"; }
 function isCancelledReconnection(item) { return item?.tipo === "reconexion" && item.informacion?.reconexionClienteCancelado === true; }
+function processColorType(item) { return isCancelledReconnection(item) ? "reconexion-cliente-cancelado" : item?.tipo || ""; }
 function selectedCancelledPlan(item) { return String(item?.informacion?.planReconectado || "").split("|"); }
 function cancelledPlanHasTv(item) { return selectedCancelledPlan(item)[1]?.toLocaleLowerCase("es").includes("+ tv") || !item?.informacion?.planReconectado; }
 function getProcessSteps(item) {
   if (isCancelledReconnection(item)) return cancelledPlanHasTv(item) ? [...cancelledReconnectionSteps] : cancelledReconnectionSteps.filter((_, index) => index !== 5);
+  if (item.tipo === "abono" && item.informacion?.resultadoPago === "no-pago") return processStepTemplates.abono.slice(0, 4);
+  if (item.tipo === "abono") return [...processStepTemplates.abono];
   if (item.tipo === "reconexion") return [...processStepTemplates.reconexion];
   return Array.isArray(item.pasos) && item.pasos.length ? item.pasos : processStepTemplates[item.tipo] || [];
 }
@@ -255,18 +266,19 @@ function processCard(item, showClient = false) {
   const owner = item.iniciadoPorUid === currentUserUid;
   const canDelete = owner || currentUserIsAdmin;
   const currentStep = steps.findIndex((_, index) => !checked.has(index));
-  const progress = steps.length ? `<section class="process-timeline" data-process-details="${escapeHtml(item.id)}" hidden aria-label="Pasos de ${escapeHtml(processTypeLabel(item.tipo, item.informacion))}"><div class="timeline-summary">${currentStep < 0 ? "Todos los pasos completados" : `Paso actual: ${currentStep + 1} de ${steps.length} · ${escapeHtml(steps[currentStep])}`}</div><ol>${steps.map((step, index) => { const done = checked.has(index); const current = index === currentStep; return `<li class="timeline-step ${done ? "is-done" : current ? "is-current" : "is-pending"}"><span class="timeline-marker" aria-hidden="true">${done ? "✓" : index + 1}</span><span class="timeline-step-copy"><strong>${escapeHtml(step)}</strong><small>${done ? "Completado" : current ? "Pendiente · paso actual" : "Pendiente"}</small></span></li>`; }).join("")}</ol><p class="process-save-status" role="status">${escapeHtml(processSaveErrors.get(item.id) || (owner ? "El avance se guarda al completar cada tarea." : `Solo ${item.iniciadoPorNombre || "quien inició el proceso"} puede continuarlo o editarlo.`))}</p></section>` : `<p class="empty-state">El checklist de este tipo de proceso aún no está configurado.</p>`;
+  const progress = steps.length ? `<section class="process-timeline" data-process-details="${escapeHtml(item.id)}" hidden aria-label="Pasos de ${escapeHtml(processTypeLabel(item.tipo, item.informacion))}"><div class="timeline-summary">${currentStep < 0 ? "Todos los pasos completados" : `Paso actual: ${currentStep + 1} de ${steps.length} · ${escapeHtml(steps[currentStep])}`}</div><ol>${steps.map((step, index) => { const done = checked.has(index); const current = index === currentStep; return `<li class="timeline-step ${done ? "is-done" : current ? "is-current" : "is-pending"}"><span class="timeline-marker" aria-hidden="true">${done ? "✓" : index + 1}</span><span class="timeline-step-copy"><strong>${escapeHtml(step)}</strong><small>${done ? "Completado" : current ? "Pendiente · paso actual" : "Pendiente"}</small></span></li>`; }).join("")}</ol><p class="process-save-status" role="status">${escapeHtml(processSaveErrors.get(item.id) || "El avance se guarda al completar cada tarea.")}</p></section>` : `<p class="empty-state">El checklist de este tipo de proceso aún no está configurado.</p>`;
   const continueButton = owner && open ? `<button class="continue-process-button" type="button" data-continue-process="${escapeHtml(item.id)}">Continuar</button>` : "";
   const deleteButton = canDelete ? `<button class="delete-process-button" type="button" data-delete-process="${escapeHtml(item.id)}">Eliminar proceso</button>` : "";
   const stepSummary = steps.length ? (currentStep < 0 ? `Todas las ${steps.length} tareas terminadas` : `Tarea ${currentStep + 1} de ${steps.length}: ${steps[currentStep]}`) : "Sin tareas configuradas";
   const detailsButton = steps.length ? `<button class="process-details-button" type="button" data-toggle-process="${escapeHtml(item.id)}" aria-expanded="false">Ver tareas</button>` : "";
   const startedAt = timestampDate(processStartDate(item)) ? formatDate(processStartDate(item)) : "No registrada";
   const completedAt = timestampDate(processCompletionDate(item)) ? formatDate(processCompletionDate(item)) : "No registrada";
-  return `<article class="process-card process-kind-${escapeHtml(item.tipo)}" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo, item.informacion))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inicio del proceso: ${escapeHtml(startedAt)}</span><span>Responsable: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Tiempo transcurrido: ${escapeHtml(timestampDate(item.iniciadoEn) ? elapsed(item.iniciadoEn) : "No disponible")}` : `Proceso completado: ${escapeHtml(completedAt)}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto del cliente: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div>${processHistorySummary(item)}<p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
+  return `<article class="process-card process-kind-${escapeHtml(processColorType(item))}" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo, item.informacion))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inicio del proceso: ${escapeHtml(startedAt)}</span><span>Responsable: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Tiempo transcurrido: ${escapeHtml(timestampDate(item.iniciadoEn) ? elapsed(item.iniciadoEn) : "No disponible")}` : `Proceso completado: ${escapeHtml(completedAt)}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto del cliente: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div>${processHistorySummary(item)}<p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
 }
 function processHistorySummary(item) {
   const info = item.informacion || {};
   const values = [];
+  if (item.tipo === "abono") values.push(`Factura: #${info.numeroFacturaAbonar || "Sin registrar"} · Espera hasta: ${info.fechaLimiteEspera ? formatAbonoDate(info.fechaLimiteEspera) : (info.diaEspera ? `día ${info.diaEspera}` : "Sin registrar")}`, `Resultado: ${info.resultadoPago === "pago" ? "Pagó" : info.resultadoPago === "no-pago" ? "No pagó · debe pagar reconexión" : "Pendiente de confirmar"}${info.valorAbonoAplicado ? ` · Abono aplicado: ${formatCurrency(info.valorAbonoAplicado)}` : ""}`);
   if (item.tipo === "cambio-plan") values.push(`Plan: ${info.planAnterior || "Anterior sin registro"} → ${info.nuevoPlan || "Pendiente de registrar"}`, `Pago mensual: ${info.valorMensualAnterior == null ? "Sin registro" : formatCurrency(info.valorMensualAnterior)} → ${info.nuevoValorMensual == null ? "Pendiente" : formatCurrency(info.nuevoValorMensual)}`);
   if (item.tipo === "cambio-fecha-pago") values.push(`Día de pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.nuevoDiaPago ? `día ${info.nuevoDiaPago}` : "Pendiente de registrar"}`);
   if (item.tipo === "reconexion" && (info.diaPago || info.fechaPago || info.nuevaFechaPago)) values.push(`Pago: ${info.fechaPagoAnterior || (info.diaPagoAnterior ? `día ${info.diaPagoAnterior}` : "Anterior sin registro")} → ${info.diaPago ? `día ${info.diaPago}` : (info.fechaPago || info.nuevaFechaPago)}`);
@@ -279,7 +291,8 @@ function processHistoryTable(list, emptyMessage) {
   return `<div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Proceso</th><th>Fecha y hora</th><th>Detalle</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>${sorted.map(item => {
     const open = item.estado !== "completado";
     const detail = processHistorySummary(item) || escapeHtml(getProcessSteps(item).find((_, index) => !getCheckedProcessSteps(item).has(index)) || "Proceso completado");
-    return `<tr><td><span class="history-kind history-kind-${escapeHtml(item.tipo)}">${escapeHtml(processTypeLabel(item.tipo, item.informacion))}</span></td><td>${escapeHtml(formatDate(processHistoryDate(item)))}</td><td class="history-detail-cell">${detail}</td><td><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></td><td>${escapeHtml(item.iniciadoPorNombre || "Asesor")}</td><td><button class="history-row-button" type="button" data-toggle-history-row="${escapeHtml(item.id)}" aria-expanded="false">Ver</button></td></tr><tr class="history-detail-row" data-history-detail="${escapeHtml(item.id)}" hidden><td colspan="6">${processCard(item)}</td></tr>`;
+    const continueButton = open && item.iniciadoPorUid === currentUserUid ? `<button class="continue-process-button" type="button" data-continue-process="${escapeHtml(item.id)}">Continuar</button>` : "";
+    return `<tr><td><span class="history-kind history-kind-${escapeHtml(processColorType(item))}">${escapeHtml(processTypeLabel(item.tipo, item.informacion))}</span></td><td>${escapeHtml(formatDate(processHistoryDate(item)))}</td><td class="history-detail-cell">${detail}</td><td><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></td><td>${escapeHtml(item.iniciadoPorNombre || "Asesor")}</td><td><div class="history-row-actions">${continueButton}<button class="history-row-button" type="button" data-toggle-history-row="${escapeHtml(item.id)}" aria-expanded="false">Ver</button></div></td></tr><tr class="history-detail-row" data-history-detail="${escapeHtml(item.id)}" hidden><td colspan="6">${processCard(item)}</td></tr>`;
   }).join("")}</tbody></table></div>`;
 }
 function renderCustomerInvoiceHistory(client) {
@@ -321,7 +334,7 @@ function renderNotifications() {
   open.forEach(item => {
     const article = document.createElement("article"); article.className = "notification-card";
     const owner = item.iniciadoPorUid === currentUserUid;
-    article.innerHTML = `<div><strong>${escapeHtml(processTypeLabel(item.tipo, item.informacion))} · ${escapeHtml(item.clienteNombre || "Cliente")}</strong><span>Cédula: ${escapeHtml(item.clienteCedula || "—")} · Inició ${escapeHtml(formatDate(item.iniciadoEn))}</span><time>Lleva ${escapeHtml(elapsed(item.iniciadoEn))} abierto · ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</time></div>${owner ? `<button type="button" data-resume-notification="${escapeHtml(item.id)}">Continuar</button>` : ""}`;
+    article.innerHTML = `<div><strong>${escapeHtml(processTypeLabel(item.tipo, item.informacion))} · ${escapeHtml(item.clienteNombre || "Cliente")}</strong><span>Cédula: ${escapeHtml(item.clienteCedula || "—")} · Inició ${escapeHtml(formatDate(item.iniciadoEn))}</span>${item.tipo === "abono" ? `<span>Factura #${escapeHtml(item.informacion?.numeroFacturaAbonar || "pendiente")} · Revisar el pago a diario hasta ${escapeHtml(formatAbonoDate(item.informacion?.fechaLimiteEspera))}</span>` : ""}<time>Lleva ${escapeHtml(elapsed(item.iniciadoEn))} abierto · ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</time></div>${owner ? `<button type="button" data-resume-notification="${escapeHtml(item.id)}">Continuar</button>` : ""}`;
     article.querySelector("[data-resume-notification]")?.addEventListener("click", () => openProcessWizard(item.id));
     notificationsHost.append(article);
   });
@@ -361,7 +374,7 @@ function renderClientDetails() {
   const invoices = customerInvoiceRecords.filter(record => String(record.cedula || "").trim().toLocaleLowerCase("es") === clientIdForInvoices);
   const historyPanel = (heading, list, empty) => `<section class="client-history-section"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>${heading}</h3></div><span class="count-pill">${list.length} ${list.length === 1 ? "registro" : "registros"}</span></div>${processHistoryTable(list, empty)}</section>`;
   const statusColor = client.estadoCliente || "sin_registrar";
-  detailsHost.innerHTML = `<div class="client-detail"><header class="client-detail-heading"><div><button class="back-to-client-list" id="backToClientList" type="button">← Volver a clientes</button><span class="eyebrow">FICHA DEL CLIENTE</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula)}</p></div><div class="client-detail-actions"><span class="client-status-badge status-${escapeHtml(statusColor)}">${escapeHtml(clientStatus(client))}</span><button id="editClientProfile" class="profile-edit-button" type="button">${editingClientProfileId === client.id ? "Cerrar edición" : "Editar datos"}</button><button id="startAnotherProcess" type="button">＋ Iniciar proceso nuevo</button></div></header><nav class="client-history-tabs" role="tablist" aria-label="Historial del cliente">${[["resumen","Resumen",clientProcesses.length],["reconexiones","Reconexiones",reconnections.length],["planes","Cambios de plan",plans.length],["pagos","Fechas de pago",paymentDates.length],["facturas","Generación de facturas",invoices.length]].map(([id,label,count]) => `<button class="client-history-tab ${selectedClientHistoryTab === id ? "is-active" : ""}" type="button" role="tab" aria-selected="${selectedClientHistoryTab === id}" data-client-tab="${id}">${label}<span>${count}</span></button>`).join("")}</nav><div class="client-history-content" role="tabpanel">${selectedClientHistoryTab === "resumen" ? `${renderClientProfile(client, latestInformation)}<section class="client-processes"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>Todos los procesos</h3></div><span class="count-pill">${items.length} ${items.length === 1 ? "proceso" : "procesos"}</span></div><div class="process-filter-row"><select id="clientProcessTypeFilter" aria-label="Filtrar por tipo"><option value="all">Todos los procesos</option><option value="reconexion">Reconexión</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select><select id="clientProcessStatusFilter" aria-label="Filtrar por estado"><option value="all">Todos los estados</option><option value="en_curso">En curso</option><option value="completado">Completados</option></select></div>${processHistoryTable(items, "Este cliente todavía no tiene procesos con esos filtros.")}</section>` : selectedClientHistoryTab === "reconexiones" ? historyPanel("Reconexiones del cliente", reconnections, "Todavía no hay reconexiones registradas.") : selectedClientHistoryTab === "planes" ? historyPanel("Cambios de plan", plans, "Todavía no hay cambios de plan registrados.") : selectedClientHistoryTab === "pagos" ? historyPanel("Cambios en la fecha de pago", paymentDates, "Todavía no hay cambios de fecha de pago registrados.") : renderCustomerInvoiceHistory(client)}</div></div>`;
+  detailsHost.innerHTML = `<div class="client-detail"><header class="client-detail-heading"><div><button class="back-to-client-list" id="backToClientList" type="button">← Volver a clientes</button><span class="eyebrow">FICHA DEL CLIENTE</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula)}</p></div><div class="client-detail-actions"><span class="client-status-badge status-${escapeHtml(statusColor)}">${escapeHtml(clientStatus(client))}</span><button id="editClientProfile" class="profile-edit-button" type="button">${editingClientProfileId === client.id ? "Cerrar edición" : "Editar datos"}</button><button id="startAnotherProcess" type="button">＋ Iniciar proceso nuevo</button></div></header><nav class="client-history-tabs" role="tablist" aria-label="Historial del cliente">${[["resumen","Resumen",clientProcesses.length],["reconexiones","Reconexiones",reconnections.length],["planes","Cambios de plan",plans.length],["pagos","Fechas de pago",paymentDates.length],["facturas","Generación de facturas",invoices.length]].map(([id,label,count]) => `<button class="client-history-tab ${selectedClientHistoryTab === id ? "is-active" : ""}" type="button" role="tab" aria-selected="${selectedClientHistoryTab === id}" data-client-tab="${id}">${label}<span>${count}</span></button>`).join("")}</nav><div class="client-history-content" role="tabpanel">${selectedClientHistoryTab === "resumen" ? `${renderClientProfile(client, latestInformation)}<section class="client-processes"><div class="client-processes-heading"><div><span class="eyebrow">HISTORIAL</span><h3>Todos los procesos</h3></div><span class="count-pill">${items.length} ${items.length === 1 ? "proceso" : "procesos"}</span></div><div class="process-filter-row"><select id="clientProcessTypeFilter" aria-label="Filtrar por tipo"><option value="all">Todos los procesos</option><option value="reconexion">Reconexión</option><option value="abono">Abono</option><option value="cambio-fecha-pago">Cambio de fecha de pago</option><option value="cambio-plan">Cambio de plan</option></select><select id="clientProcessStatusFilter" aria-label="Filtrar por estado"><option value="all">Todos los estados</option><option value="en_curso">En curso</option><option value="completado">Completados</option></select></div>${processHistoryTable(items, "Este cliente todavía no tiene procesos con esos filtros.")}</section>` : selectedClientHistoryTab === "reconexiones" ? historyPanel("Reconexiones del cliente", reconnections, "Todavía no hay reconexiones registradas.") : selectedClientHistoryTab === "planes" ? historyPanel("Cambios de plan", plans, "Todavía no hay cambios de plan registrados.") : selectedClientHistoryTab === "pagos" ? historyPanel("Cambios en la fecha de pago", paymentDates, "Todavía no hay cambios de fecha de pago registrados.") : renderCustomerInvoiceHistory(client)}</div></div>`;
   if ($("#clientProcessTypeFilter")) $("#clientProcessTypeFilter").value = filterType;
   if ($("#clientProcessStatusFilter")) $("#clientProcessStatusFilter").value = filterStatus;
   $("#clientProcessTypeFilter")?.addEventListener("change", renderClientDetails); $("#clientProcessStatusFilter")?.addEventListener("change", renderClientDetails);
@@ -444,7 +457,7 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
     document.body.append(dialog);
   }
   dialog.dataset.processId = processId;
-  const steps = getProcessSteps(process);
+  let steps = getProcessSteps(process);
   const checked = getCheckedProcessSteps(process);
   const currentStep = steps.findIndex((_, index) => !checked.has(index));
   const activeStep = requestedStep !== null && requestedStep >= 0 && requestedStep < steps.length ? requestedStep : currentStep;
@@ -457,7 +470,7 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(process, activeStep, information, client) : !completed ? renderClientProfileProcessFields(process, activeStep, information, client) : "";
   dialog.dataset.activeStep = String(activeStep);
   const completionMessage = process.tipo === "reconexion" ? "¡Listo! El cliente está completo." : `¡Listo! El proceso de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")} está completo.`;
-  const completionNote = information.notificacionFacturaOmitida ? "Ya había una revisión pendiente; no agregué otra a la lista." : `Se guardaron todas las tareas de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")}.`;
+  const completionNote = process.tipo === "abono" && information.resultadoPago === "no-pago" ? "El cliente no pagó dentro del plazo; queda pendiente cobrar la reconexión." : information.notificacionFacturaOmitida ? "Ya había una revisión pendiente; no agregué otra a la lista." : `Se guardaron todas las tareas de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")}.`;
   dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo, process.informacion)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>${escapeHtml(completionMessage)}</h3><p>${escapeHtml(completionNote)}</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
   dialog.querySelectorAll("[data-close-process-wizard]").forEach(button => button.addEventListener("click", () => dialog.close()));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => setWizardInformationDraft(processId, readWizardInformation(dialog))));
@@ -566,13 +579,54 @@ function updateReconnectionSummaries(dialog) {
   const information = { ...(process?.informacion || {}), ...readWizardInformation(dialog), valorMensualCliente: clients.find(item => item.id === process?.clienteId)?.valorMensual ?? 0 };
   const charge = dialog.querySelector("[data-invoice-total]"); if (charge) charge.textContent = formatCurrency(calculateReconnectionTotal(information));
   const annotation = dialog.querySelector(".wizard-annotation"); if (annotation) annotation.value = isCancelledReconnection(process) ? buildCancelledReconnectionAnnotation(information) : buildReconnectionAnnotation(information);
+  const abonoAnnotation = dialog.querySelector(".wizard-annotation[data-abono-annotation]"); if (abonoAnnotation) abonoAnnotation.value = buildAbonoAnnotation(information);
+  const abonoDeadline = dialog.querySelector("[data-abono-deadline-summary]");
+  if (abonoDeadline) {
+    const deadline = nextAbonoDeadline(dialog.querySelector('[name="diaEspera"]')?.value);
+    abonoDeadline.textContent = deadline ? `Fecha límite calculada: ${formatAbonoDate(deadline)}` : "Selecciona el día de espera (1 al 30).";
+  }
   if (dialog.querySelector("[data-reajuste-summary]")) updateReajusteSummary(dialog, dialog.querySelector('[name="valorReajuste"]')?.value);
   const day = dialog.querySelector('[name="diaPago"]')?.value || dialog.querySelector('[name="diaPagoReconectar"]')?.value;
   const summary = dialog.querySelector("[data-payment-date-summary]");
   if (summary) summary.textContent = day ? `Pago: día ${day} de cada mes. Corte: día ${addDaysOnThirtyDayCycle(day)} de cada mes (dos días después, sin día 31).` : "Escribe únicamente el día del mes, entre 1 y 30.";
 }
 function addDaysOnThirtyDayCycle(day, offset = 2) { return ((Number(day) - 1 + offset) % 30) + 1; }
+function bogotaDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  return Object.fromEntries(parts.filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+}
+function nextAbonoDeadline(dayValue, now = new Date()) {
+  const day = Number(dayValue);
+  if (!Number.isInteger(day) || day < 1 || day > 30) return "";
+  const today = bogotaDateParts(now);
+  let year = Number(today.year), month = Number(today.month);
+  if (day < Number(today.day)) { month += 1; if (month > 12) { month = 1; year += 1; } }
+  const targetDay = Math.min(day, new Date(year, month, 0).getDate());
+  return [year, String(month).padStart(2, "0"), String(targetDay).padStart(2, "0")].join("-");
+}
+function formatAbonoDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || "Sin registrar");
+}
+function buildAbonoAnnotation(info) {
+  const date = new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
+  const invoice = String(info.numeroFacturaAbonar || "[número de factura]").trim();
+  const day = info.diaEspera || "[día]";
+  const advisor = String(info.asesorAbono || currentUserName || "[asesor]").trim();
+  return `${date} ABONO: Se genera factura de abono #${invoice} se da espera hasta el día ${day} - ${advisor}`;
+}
+function renderAbonoStepFields(process, step, info, client) {
+  const customerId = encodeURIComponent(client.cedula || process.clienteCedula || "");
+  const wisphub = `https://wisphub.net/clientes/ver/${customerId}@cibercitywisp/`;
+  if (step === 0) return `<label class="wizard-contact-field">Número de factura a la que se aplicará el abono<input data-process-info name="numeroFacturaAbonar" inputmode="numeric" value="${escapeHtml(info.numeroFacturaAbonar || "")}" placeholder="Número de factura o ticket" required></label><label class="wizard-contact-field">Día de espera (1 al 30)<input data-process-info name="diaEspera" type="number" min="1" max="30" step="1" value="${escapeHtml(info.diaEspera || "")}" required></label><p class="wizard-calculated-amount" data-abono-deadline-summary>La fecha límite se calcula con el próximo día disponible.</p><label class="wizard-contact-field">Asesor<input data-process-info name="asesorAbono" value="${escapeHtml(info.asesorAbono || currentUserName || "")}" required></label><label class="wizard-check-confirm"><input data-process-info name="facturaAbonoGenerada" type="checkbox" value="true" ${info.facturaAbonoGenerada === "true" ? "checked" : ""} required> Generé la factura de abono con comisión</label><a class="wizard-external-link" href="${wisphub}#retab3" target="_blank" rel="noopener noreferrer">Abrir historial de pago ↗</a>`;
+  if (step === 1) return `<p class="wizard-calculated-amount">Promesa de pago hasta el <strong>${escapeHtml(formatAbonoDate(info.fechaLimiteEspera))}</strong>. Mientras llega esa fecha, revisa a diario si pagó.</p><a class="wizard-external-link" href="${wisphub}#retab3" target="_blank" rel="noopener noreferrer">Revisar historial de pago en Wisphub ↗</a><label class="wizard-check-confirm"><input data-process-info name="promesaPagoRegistrada" type="checkbox" value="true" ${info.promesaPagoRegistrada === "true" ? "checked" : ""} required> Registré la promesa de pago hasta la fecha límite</label>`;
+  if (step === 2) return `<a class="wizard-external-link" href="${wisphub}#retab3" target="_blank" rel="noopener noreferrer">Revisar historial de pago en Wisphub ↗</a><label class="wizard-contact-field">Resultado de la revisión<select data-process-info name="resultadoPago" required><option value="">Selecciona el resultado</option><option value="pago" ${info.resultadoPago === "pago" ? "selected" : ""}>El cliente pagó</option><option value="no-pago" ${info.resultadoPago === "no-pago" ? "selected" : ""}>No ha pagado</option></select></label><p class="wizard-calculated-amount">Fecha límite de espera: ${escapeHtml(formatAbonoDate(info.fechaLimiteEspera))}. Si no pagó, podrás cerrar el proceso después de esa fecha.</p>`;
+  if (step === 3) return `<a class="wizard-external-link" href="${wisphub}#retab4" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a><label class="wizard-contact-field">Anotación lista para copiar<textarea class="wizard-annotation" data-abono-annotation readonly rows="3">${escapeHtml(buildAbonoAnnotation(info))}</textarea></label><button type="button" class="secondary-button" data-copy-annotation>Copiar anotación</button><label class="wizard-check-confirm"><input data-process-info name="anotacionAbonoRegistrada" type="checkbox" value="true" ${info.anotacionAbonoRegistrada === "true" ? "checked" : ""} required> Registré la anotación después de revisar el pago</label>`;
+  if (step === 4) return `<p class="wizard-calculated-amount">Factura que recibirá el descuento: <strong>#${escapeHtml(info.numeroFacturaAbonar || "—")}</strong></p><a class="wizard-external-link" href="https://wisphub.net/facturas/editar/cibercitywisp/${encodeURIComponent(info.numeroFacturaAbonar || "")}/" target="_blank" rel="noopener noreferrer">Abrir factura para aplicar el descuento ↗</a><label class="wizard-check-confirm"><input data-process-info name="abonoAplicado" type="checkbox" value="true" ${info.abonoAplicado === "true" ? "checked" : ""} required> Apliqué el descuento a la factura</label>`;
+  return "";
+}
 function renderClientProfileProcessFields(process, step, info, client) {
+  if (process.tipo === "abono") return renderAbonoStepFields(process, step, info, client);
   if (process.tipo === "cambio-plan") {
     if (step === 0) return `<p class="wizard-calculated-amount">Plan registrado actualmente: <strong>${escapeHtml(client.plan || "Sin registrar")}</strong></p>`;
     if (step === 1) return `<div class="wizard-form-grid"><label class="wizard-contact-field">Nuevo plan<input data-process-info name="nuevoPlan" value="${escapeHtml(info.nuevoPlan || "")}" placeholder="Escribe el nuevo plan" required></label><label class="wizard-contact-field">Nuevo valor mensual (opcional)<input data-process-info name="nuevoValorMensual" type="number" min="0" step="100" value="${escapeHtml(info.nuevoValorMensual || "")}" placeholder="Valor en pesos"></label></div>`;
@@ -640,7 +694,7 @@ async function completeWizardTask(event) {
   const index = Number(button.dataset.stepIndex);
   const process = processes.find(item => item.id === processId);
   if (!process || process.iniciadoPorUid !== currentUserUid) return;
-  const steps = getProcessSteps(process);
+  let steps = getProcessSteps(process);
   const cancelledReconnect = isCancelledReconnection(process);
   const checked = getCheckedProcessSteps(process);
   if (steps.findIndex((_, stepIndex) => !checked.has(stepIndex)) !== index) return;
@@ -659,6 +713,20 @@ async function completeWizardTask(event) {
   await processDetailSaveQueue.catch(() => {});
   const latest = processes.find(item => item.id === processId) || process;
   const informacion = { ...(latest.informacion || {}), ...getWizardInformationDraft(processId), ...readWizardInformation(dialog), valorMensualCliente: clients.find(item => item.id === process.clienteId)?.valorMensual ?? 0 };
+  if (process.tipo === "abono" && index === 2 && informacion.resultadoPago === "no-pago") steps = processStepTemplates.abono.slice(0, 4);
+  if (process.tipo === "abono" && index === 0) {
+    if (!/^\d+$/.test(String(informacion.numeroFacturaAbonar || "").trim())) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe únicamente el número de la factura que recibirá el abono."; status.classList.add("is-error"); } return; }
+    const waitDay = Number(informacion.diaEspera);
+    if (!Number.isInteger(waitDay) || waitDay < 1 || waitDay > 30) { const status = $(".wizard-status"); if (status) { status.textContent = "El día de espera debe estar entre el 1 y el 30."; status.classList.add("is-error"); } return; }
+    informacion.fechaLimiteEspera = nextAbonoDeadline(waitDay);
+  }
+  if (process.tipo === "abono" && index === 2) {
+    if (!informacion.fechaLimiteEspera) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra primero un día de espera válido en la primera tarea."; status.classList.add("is-error"); } return; }
+    const today = bogotaDateParts();
+    const todayIso = [today.year, today.month, today.day].join("-");
+    if (informacion.resultadoPago === "no-pago" && todayIso < informacion.fechaLimiteEspera) { const status = $(".wizard-status"); if (status) { status.textContent = `La fecha de espera vence el ${formatAbonoDate(informacion.fechaLimiteEspera)}. Mantén el proceso pendiente y vuelve a revisar el pago ese día.`; status.classList.add("is-error"); } return; }
+    informacion.fechaResultadoPago = todayIso;
+  }
   let profileChanges = null;
   if (process.tipo === "cambio-plan" && index === 2) {
     if (!String(informacion.nuevoPlan || "").trim()) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra el nuevo plan en la tarea anterior para actualizar la ficha del cliente."; status.classList.add("is-error"); } return; }

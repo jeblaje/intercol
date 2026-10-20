@@ -42,6 +42,7 @@
           <fieldset class="button-field"><legend>Tipo de caja</legend><input type="hidden" name="highBoxType" value="X8"><div id="highBoxTypeChoices" class="button-choices"></div></fieldset>
           <label class="full-width">Dirección<input name="highAddress" placeholder="Dirección" required></label>
           <label>Barrio<input name="highNeighborhood" placeholder="Barrio" required></label>
+          <label>Tipo de servicio<select name="highServiceType" required><option value="Instalación">Instalación</option><option value="Soporte">Soporte</option></select></label>
           <label>Ticket<input name="ticket" placeholder="Número de ticket"></label>
           <fieldset class="button-field"><legend>¿Pagó?</legend><input type="hidden" name="paid" value="Sí"><div id="paidChoices" class="button-choices"></div></fieldset>
           <label>¿A quién pagó? (opcional)<input name="paidTo" placeholder="Ej. al técnico"></label>
@@ -74,6 +75,6 @@
       <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><div class="output-heading-actions"><a class="clear-button interbot-groups-link" href="https://crm.isp-intercol.com/groups" target="_blank" rel="noopener noreferrer">Abrir grupos en Interbot ↗</a><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
     </section>
   </main>
-  <script src="script.js?v=20261017-high-power-box-fields"></script>
+  <script src="script.js?v=20261020-high-power-service-type"></script>
 </body>
 </html>

@@ -148,6 +148,7 @@ function renderReport() {
       optionalLine("Tipo de caja", value("highBoxType")),
       optionalLine("Dirección", value("highAddress")),
       optionalLine("Barrio", value("highNeighborhood")),
+      optionalLine("Tipo de servicio", value("highServiceType")),
       optionalLine("Ticket", value("ticket")),
       optionalLine("Pago", value("paid")),
       optionalLine("¿A quién pagó?", value("paidTo")),

@@ -346,10 +346,33 @@ function cleanClientProfile(data = {}) {
 export function updateClientProfile(id, profile) {
   return updateDoc(doc(firestore, "clientes", id), { ...cleanClientProfile(profile), actualizadoEn: serverTimestamp() });
 }
-export function subscribeClientProcesses(onChange, onError) { return onSnapshot(clientProcesses, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
+export function subscribeClientProcesses(onChange, onError) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return onSnapshot(query(clientProcesses, where("tipo", "!=", "abono")), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError);
+  const snapshots = new Map();
+  const subscriptions = [
+    ["general", query(clientProcesses, where("tipo", "!=", "abono"))],
+    ["ownProcesses", query(clientProcesses, where("iniciadoPorUid", "==", uid))],
+    ["completedProcesses", query(clientProcesses, where("estado", "==", "completado"))]
+  ];
+  const ready = new Set();
+  const emit = () => {
+    if (ready.size < subscriptions.length) return;
+    const merged = new Map();
+    snapshots.forEach(items => items.forEach(item => merged.set(item.id, item)));
+    onChange([...merged.values()]);
+  };
+  const unsubscribers = subscriptions.map(([key, source]) => onSnapshot(source, snapshot => {
+    snapshots.set(key, snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+    ready.add(key);
+    emit();
+  }, onError));
+  return () => unsubscribers.forEach(unsubscribe => unsubscribe());
+}
 export function createClientProcess({ client, type, user, reconexionClienteCancelado = false }) {
   const stepsByType = {
     reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
+    abono: ["Genera la factura de abono con comisión", "Registra la promesa de pago y espera hasta la fecha acordada", "Confirma si el cliente pagó la factura de abono", "Haz la anotación del abono", "Aplica el descuento a la factura correspondiente"],
     "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
     "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
   };
