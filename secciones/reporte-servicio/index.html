@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reporte servicio · INTERCOL</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261020-interbot-boton-copiar">
 </head>
 <body>
   <main class="report-app">
@@ -71,7 +71,7 @@
           <label class="full-width">Asesor<input name="noPowerAdvisor" placeholder="Nombre del asesor" required></label>
         </div>
       </form>
-      <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
+      <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><div class="output-heading-actions"><a class="clear-button interbot-groups-link" href="https://crm.isp-intercol.com/groups" target="_blank" rel="noopener noreferrer">Abrir grupos en Interbot ↗</a><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
     </section>
   </main>
   <script src="script.js?v=20261017-high-power-box-fields"></script>

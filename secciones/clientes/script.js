@@ -8,11 +8,39 @@ const processStepTemplates = {
   "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
   "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
 };
+const cancelledReconnectionSteps = [
+  "Haz la anotación con los datos de la imagen",
+  "Registra en el RB la IP asignada y el plan",
+  "Cambia el estado del cliente a Activo",
+  "¿Cambiaste la fecha de pago?",
+  "Verifica la facturación y el descuento",
+  "Asígnale televisión al cliente",
+  "Configura la dirección, el puerto y la caja en SmartOLT"
+];
+const cancelledReconnectionPlans = {
+  especiales: [
+    ["900 MB + TV", 92800], ["500 MB + TV", 72800], ["300 MB + TV", 62800], ["100 MB + TV", 52800],
+    ["900 MB solo internet", 82800], ["600 MB solo internet", 72800], ["400 MB solo internet", 62800], ["200 MB solo internet", 52800]
+  ],
+  generales: [
+    ["900 MB + TV", 102800], ["500 MB + TV", 82800], ["300 MB + TV", 72800], ["100 MB + TV", 62800],
+    ["900 MB solo internet", 92800], ["600 MB solo internet", 72800], ["300 MB solo internet", 62800], ["100 MB solo internet", 52800]
+  ]
+};
+const cancelledReconnectionHelp = [
+  "Selecciona el plan y el día de pago, prepara la anotación y regístrala en Wisphub.",
+  "Anota la IP que asignaste en el RB y confirma el plan seleccionado. Puedes abrir las anotaciones de Wisphub desde aquí.",
+  "Cambia el estado del cliente a Activo en Wisphub. Puedes abrir sus anotaciones desde aquí.",
+  "Actualiza la fecha de pago en Wisphub. Al guardar esta tarea se agregará la revisión de generación de factura, salvo que ya exista una pendiente.",
+  "Abre el historial de pagos en Wisphub y verifica si fue necesario ajustar el descuento.",
+  "Este paso aparece solo cuando el plan seleccionado incluye TV.",
+  "Configura la dirección, el puerto y la caja del cliente en SmartOLT."
+];
 const processStepHelp = {
   reconexion: [
     "Selecciona el valor de reconexión que se guardará en la ficha del cliente.",
     "Abre las facturas pendientes en Wisphub y selecciona si generaste una factura nueva o ajustaste una existente.",
-    "Actualiza la fecha de pago en Wisphub y registra el día del mes que quedó (del 1 al 30).",
+    "Actualiza la fecha de pago en Wisphub y registra el día del mes que quedó (del 1 al 30). El corte se calculará dos días después, también dentro del ciclo del 1 al 30.",
     "Abre las anotaciones en Wisphub, copia el texto preparado y confirma que hiciste la anotación. También puedes programar la revisión de la próxima factura."
   ]
 };
@@ -20,6 +48,7 @@ const legacyReconnectionSteps = ["Confirmar cliente y validar su cédula", "Veri
 let clients = [];
 let processes = [];
 let customerInvoiceRecords = [];
+let customerInvoiceActionMessage = "";
 let customerInvoiceLoadError = "";
 let customerInvoiceLoading = false;
 let selectedClientId = null;
@@ -70,8 +99,23 @@ function setWizardContactDraft(processId, value) {
 }
 
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]); }
-function timestampDate(value) { if (value?.toDate instanceof Function) return value.toDate(); const date = value instanceof Date ? value : value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date : null; }
+function timestampDate(value) {
+  if (value?.toDate instanceof Function) return value.toDate();
+  if (value && typeof value === "object") {
+    const seconds = Number(value.seconds ?? value._seconds);
+    const nanoseconds = Number(value.nanoseconds ?? value._nanoseconds ?? 0);
+    if (Number.isFinite(seconds)) {
+      const date = new Date(seconds * 1000 + (Number.isFinite(nanoseconds) ? nanoseconds / 1e6 : 0));
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+  }
+  const date = value instanceof Date ? value : value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
 function formatDate(value) { const date = timestampDate(value); return date ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Bogota" }).format(date) : "Fecha pendiente"; }
+function processStartDate(item) { return item.iniciadoEn || null; }
+function processCompletionDate(item) { return item.completadoEn || (item.estado === "completado" ? item.actualizadoEn : null); }
+function processHistoryDate(item) { return item.estado === "completado" ? (processCompletionDate(item) || processStartDate(item)) : (processStartDate(item) || item.actualizadoEn); }
 function elapsed(value) {
   const date = timestampDate(value); if (!date) return "Calculando tiempo…";
   const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
@@ -89,13 +133,18 @@ const profileVisuals = {
   "Registrado por": ["🧑‍💼", "identity"], "Cliente desde": ["🗓️", "date"]
 };
 function profileIcon(label) { return profileVisuals[label] || ["•", "identity"]; }
-function processTypeLabel(type) { return processNames[type] || "Proceso"; }
+function processTypeLabel(type, information = {}) { return type === "reconexion" && information.reconexionClienteCancelado === true ? "Reconexión cliente cancelado" : processNames[type] || "Proceso"; }
+function isCancelledReconnection(item) { return item?.tipo === "reconexion" && item.informacion?.reconexionClienteCancelado === true; }
+function selectedCancelledPlan(item) { return String(item?.informacion?.planReconectado || "").split("|"); }
+function cancelledPlanHasTv(item) { return selectedCancelledPlan(item)[1]?.toLocaleLowerCase("es").includes("+ tv") || !item?.informacion?.planReconectado; }
 function getProcessSteps(item) {
+  if (isCancelledReconnection(item)) return cancelledPlanHasTv(item) ? [...cancelledReconnectionSteps] : cancelledReconnectionSteps.filter((_, index) => index !== 5);
   if (item.tipo === "reconexion") return [...processStepTemplates.reconexion];
   return Array.isArray(item.pasos) && item.pasos.length ? item.pasos : processStepTemplates[item.tipo] || [];
 }
 function getCheckedProcessSteps(item) {
   const saved = new Set(Array.isArray(item.pasosVerificados) ? item.pasosVerificados.map(Number) : []);
+  if (isCancelledReconnection(item)) return saved;
   if (item.tipo !== "reconexion" || !Array.isArray(item.pasos)) return saved;
   const migrated = new Set();
   if (item.pasos.length === 11) {
@@ -152,7 +201,7 @@ function renderClientProfile(client, latestInformation) {
     ["Pago mensual", client.valorMensual !== null && client.valorMensual !== undefined && client.valorMensual !== "" ? formatCurrency(client.valorMensual) : "Sin registrar"],
     ["Cobro de reconexión", client.valorReconexion ? formatCurrency(client.valorReconexion) : ""],
     ["Fecha de pago", client.diaPago ? `${client.diaPago} de cada mes` : (client.fechaPago || "Sin registrar")],
-    ["Fecha de corte", client.fechaCorte || (client.diaCorte ? `${client.diaCorte} de cada mes` : "Sin registrar")],
+    ["Fecha de corte", client.diaCorte ? `${client.diaCorte} de cada mes` : (client.fechaCorte || "Sin registrar")],
     ["Generación de factura", client.fechaGeneracionFactura || ""],
     ["Zona", savedZone || "Sin registrar"],
     ["Número de contacto", latestInformation.numeroContacto],
@@ -206,12 +255,14 @@ function processCard(item, showClient = false) {
   const owner = item.iniciadoPorUid === currentUserUid;
   const canDelete = owner || currentUserIsAdmin;
   const currentStep = steps.findIndex((_, index) => !checked.has(index));
-  const progress = steps.length ? `<section class="process-timeline" data-process-details="${escapeHtml(item.id)}" hidden aria-label="Pasos de ${escapeHtml(processTypeLabel(item.tipo))}"><div class="timeline-summary">${currentStep < 0 ? "Todos los pasos completados" : `Paso actual: ${currentStep + 1} de ${steps.length} · ${escapeHtml(steps[currentStep])}`}</div><ol>${steps.map((step, index) => { const done = checked.has(index); const current = index === currentStep; return `<li class="timeline-step ${done ? "is-done" : current ? "is-current" : "is-pending"}"><span class="timeline-marker" aria-hidden="true">${done ? "✓" : index + 1}</span><span class="timeline-step-copy"><strong>${escapeHtml(step)}</strong><small>${done ? "Completado" : current ? "Pendiente · paso actual" : "Pendiente"}</small></span></li>`; }).join("")}</ol><p class="process-save-status" role="status">${escapeHtml(processSaveErrors.get(item.id) || (owner ? "El avance se guarda al completar cada tarea." : `Solo ${item.iniciadoPorNombre || "quien inició el proceso"} puede continuarlo o editarlo.`))}</p></section>` : `<p class="empty-state">El checklist de este tipo de proceso aún no está configurado.</p>`;
+  const progress = steps.length ? `<section class="process-timeline" data-process-details="${escapeHtml(item.id)}" hidden aria-label="Pasos de ${escapeHtml(processTypeLabel(item.tipo, item.informacion))}"><div class="timeline-summary">${currentStep < 0 ? "Todos los pasos completados" : `Paso actual: ${currentStep + 1} de ${steps.length} · ${escapeHtml(steps[currentStep])}`}</div><ol>${steps.map((step, index) => { const done = checked.has(index); const current = index === currentStep; return `<li class="timeline-step ${done ? "is-done" : current ? "is-current" : "is-pending"}"><span class="timeline-marker" aria-hidden="true">${done ? "✓" : index + 1}</span><span class="timeline-step-copy"><strong>${escapeHtml(step)}</strong><small>${done ? "Completado" : current ? "Pendiente · paso actual" : "Pendiente"}</small></span></li>`; }).join("")}</ol><p class="process-save-status" role="status">${escapeHtml(processSaveErrors.get(item.id) || (owner ? "El avance se guarda al completar cada tarea." : `Solo ${item.iniciadoPorNombre || "quien inició el proceso"} puede continuarlo o editarlo.`))}</p></section>` : `<p class="empty-state">El checklist de este tipo de proceso aún no está configurado.</p>`;
   const continueButton = owner && open ? `<button class="continue-process-button" type="button" data-continue-process="${escapeHtml(item.id)}">Continuar</button>` : "";
   const deleteButton = canDelete ? `<button class="delete-process-button" type="button" data-delete-process="${escapeHtml(item.id)}">Eliminar proceso</button>` : "";
   const stepSummary = steps.length ? (currentStep < 0 ? `Todas las ${steps.length} tareas terminadas` : `Tarea ${currentStep + 1} de ${steps.length}: ${steps[currentStep]}`) : "Sin tareas configuradas";
   const detailsButton = steps.length ? `<button class="process-details-button" type="button" data-toggle-process="${escapeHtml(item.id)}" aria-expanded="false">Ver tareas</button>` : "";
-  return `<article class="process-card process-kind-${escapeHtml(item.tipo)}" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inició: ${escapeHtml(formatDate(item.iniciadoEn))}</span><span>Por: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Lleva ${escapeHtml(elapsed(item.iniciadoEn))}` : `Finalizó: ${escapeHtml(formatDate(item.completadoEn))}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div>${processHistorySummary(item)}<p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
+  const startedAt = timestampDate(processStartDate(item)) ? formatDate(processStartDate(item)) : "No registrada";
+  const completedAt = timestampDate(processCompletionDate(item)) ? formatDate(processCompletionDate(item)) : "No registrada";
+  return `<article class="process-card process-kind-${escapeHtml(item.tipo)}" id="process-${escapeHtml(item.id)}"><div class="process-row"><div class="process-row-main"><div class="process-card-top"><div><strong>${escapeHtml(processTypeLabel(item.tipo, item.informacion))}</strong>${showClient ? `<span class="process-client-name">${escapeHtml(item.clienteNombre || "")}</span>` : ""}</div><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></div><div class="process-info"><span>Inicio del proceso: ${escapeHtml(startedAt)}</span><span>Responsable: ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</span><span>${open ? `Tiempo transcurrido: ${escapeHtml(timestampDate(item.iniciadoEn) ? elapsed(item.iniciadoEn) : "No disponible")}` : `Proceso completado: ${escapeHtml(completedAt)}`}</span>${item.informacion?.numeroContacto ? `<span>Contacto del cliente: ${escapeHtml(item.informacion.numeroContacto)}</span>` : ""}</div>${processHistorySummary(item)}<p class="process-next-step">${escapeHtml(stepSummary)}</p></div><div class="process-card-actions">${detailsButton}${continueButton}${deleteButton}</div></div>${progress}</article>`;
 }
 function processHistorySummary(item) {
   const info = item.informacion || {};
@@ -224,11 +275,11 @@ function processHistorySummary(item) {
 }
 function processHistoryTable(list, emptyMessage) {
   if (!list.length) return `<p class="empty-state">${emptyMessage}</p>`;
-  const sorted = [...list].sort((a, b) => (timestampDate(b.iniciadoEn)?.getTime() || 0) - (timestampDate(a.iniciadoEn)?.getTime() || 0));
-  return `<div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Proceso</th><th>Fecha</th><th>Detalle</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>${sorted.map(item => {
+  const sorted = [...list].sort((a, b) => (timestampDate(processHistoryDate(b))?.getTime() || 0) - (timestampDate(processHistoryDate(a))?.getTime() || 0));
+  return `<div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Proceso</th><th>Fecha y hora</th><th>Detalle</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>${sorted.map(item => {
     const open = item.estado !== "completado";
     const detail = processHistorySummary(item) || escapeHtml(getProcessSteps(item).find((_, index) => !getCheckedProcessSteps(item).has(index)) || "Proceso completado");
-    return `<tr><td><span class="history-kind history-kind-${escapeHtml(item.tipo)}">${escapeHtml(processTypeLabel(item.tipo))}</span></td><td>${escapeHtml(formatDate(item.iniciadoEn))}</td><td class="history-detail-cell">${detail}</td><td><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></td><td>${escapeHtml(item.iniciadoPorNombre || "Asesor")}</td><td><button class="history-row-button" type="button" data-toggle-history-row="${escapeHtml(item.id)}" aria-expanded="false">Ver</button></td></tr><tr class="history-detail-row" data-history-detail="${escapeHtml(item.id)}" hidden><td colspan="6">${processCard(item)}</td></tr>`;
+    return `<tr><td><span class="history-kind history-kind-${escapeHtml(item.tipo)}">${escapeHtml(processTypeLabel(item.tipo, item.informacion))}</span></td><td>${escapeHtml(formatDate(processHistoryDate(item)))}</td><td class="history-detail-cell">${detail}</td><td><span class="process-chip ${open ? "open" : "done"}">${open ? "En curso" : "Completado"}</span></td><td>${escapeHtml(item.iniciadoPorNombre || "Asesor")}</td><td><button class="history-row-button" type="button" data-toggle-history-row="${escapeHtml(item.id)}" aria-expanded="false">Ver</button></td></tr><tr class="history-detail-row" data-history-detail="${escapeHtml(item.id)}" hidden><td colspan="6">${processCard(item)}</td></tr>`;
   }).join("")}</tbody></table></div>`;
 }
 function renderCustomerInvoiceHistory(client) {
@@ -238,8 +289,28 @@ function renderCustomerInvoiceHistory(client) {
   const reviewed = records.filter(record => record.revisado).sort((a, b) => (timestampDate(b.revisadoEn)?.getTime() || timestampDate(b.fechaNotificacion)?.getTime() || 0) - (timestampDate(a.revisadoEn)?.getTime() || timestampDate(a.fechaNotificacion)?.getTime() || 0));
   const selected = selectedInvoiceHistoryStatus === "reviewed" ? reviewed : pending;
   const statusLabel = selectedInvoiceHistoryStatus === "reviewed" ? "Verificada" : "Por verificar";
-  const rows = selected.map(record => `<tr><td>${escapeHtml(formatDate(record.fechaNotificacion))}</td><td>${record.diaPago ? `Día ${escapeHtml(record.diaPago)} · aviso 10 días antes` : "Sin día de pago"}</td><td><span class="invoice-history-status ${record.revisado ? "is-reviewed" : "is-pending"}">${record.revisado ? "Verificada" : "Por verificar"}</span></td><td>${record.revisado ? escapeHtml(formatDate(record.revisadoEn)) : "Pendiente"}</td><td>${escapeHtml(record.revisadoPor || "—")}</td></tr>`).join("");
-  return `<section class="client-history-section client-invoice-history"><div class="client-processes-heading"><div><span class="eyebrow">GENERACIÓN DE FACTURAS</span><h3>Verificaciones de ${escapeHtml(clientName(client))}</h3><p>Se muestran únicamente los registros de esta cédula.</p></div><span class="count-pill">${records.length} ${records.length === 1 ? "registro" : "registros"}</span></div>${customerInvoiceLoadError ? `<p class="empty-state error-state">${escapeHtml(customerInvoiceLoadError)}</p>` : `<div class="invoice-history-filters" role="group" aria-label="Estado de las verificaciones"><button type="button" class="invoice-history-filter ${selectedInvoiceHistoryStatus === "pending" ? "is-active" : ""}" data-invoice-status="pending" aria-pressed="${selectedInvoiceHistoryStatus === "pending"}">Por verificar <span>${pending.length}</span></button><button type="button" class="invoice-history-filter ${selectedInvoiceHistoryStatus === "reviewed" ? "is-active" : ""}" data-invoice-status="reviewed" aria-pressed="${selectedInvoiceHistoryStatus === "reviewed"}">Verificadas <span>${reviewed.length}</span></button></div><div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Fecha y hora para verificar</th><th>Programación de pago</th><th>Estado</th><th>Fecha verificada</th><th>Verificada por</th></tr></thead><tbody>${customerInvoiceLoading ? `<tr><td class="invoice-history-empty" colspan="5">Cargando verificaciones de facturas…</td></tr>` : rows || `<tr><td class="invoice-history-empty" colspan="5">${records.length ? `No hay facturas ${statusLabel.toLocaleLowerCase("es")} para este cliente.` : "Este cliente todavía no tiene verificaciones de facturas."}</td></tr>`}</tbody></table></div>`}</section>`;
+  const rows = selected.map(record => {
+    const linkedProcess = record.processId ? processes.find(item => item.id === record.processId) : null;
+    const paymentDay = record.diaPago || linkedProcess?.informacion?.diaPago || client.diaPago;
+    const customerId = encodeURIComponent(client.cedula || record.cedula || "");
+    const paymentLinks = customerId ? `<div class="invoice-payment-links"><a href="https://wisphub.net/clientes/ver/${customerId}@cibercitywisp/#retab5" target="_blank" rel="noopener noreferrer">Fecha de pago ↗</a><a href="https://wisphub.net/clientes/ver/${customerId}@cibercitywisp/#retab3" target="_blank" rel="noopener noreferrer">Historial de pago ↗</a></div>` : "";
+    return `<tr><td>${escapeHtml(formatDate(record.fechaNotificacion))}</td><td>${paymentDay ? `Día ${escapeHtml(paymentDay)} de cada mes` : "Sin día de pago"}${paymentLinks}</td><td><span class="invoice-history-status ${record.revisado ? "is-reviewed" : "is-pending"}">${record.revisado ? "Verificada" : "Por verificar"}</span></td><td>${record.revisado ? escapeHtml(formatDate(record.revisadoEn)) : "Pendiente"}</td><td>${escapeHtml(record.revisadoPor || "—")}</td><td>${record.revisado ? "—" : `<button class="invoice-review-button" type="button" data-mark-invoice-reviewed="${escapeHtml(record.id)}">Marcar verificada</button>`}</td></tr>`;
+  }).join("");
+  return `<section class="client-history-section client-invoice-history"><div class="client-processes-heading"><div><span class="eyebrow">GENERACIÓN DE FACTURAS</span><h3>Verificaciones de ${escapeHtml(clientName(client))}</h3><p>Se muestran únicamente los registros de esta cédula.</p></div><span class="count-pill">${records.length} ${records.length === 1 ? "registro" : "registros"}</span></div>${customerInvoiceLoadError ? `<p class="empty-state error-state">${escapeHtml(customerInvoiceLoadError)}</p>` : `<div class="invoice-history-filters" role="group" aria-label="Estado de las verificaciones"><button type="button" class="invoice-history-filter ${selectedInvoiceHistoryStatus === "pending" ? "is-active" : ""}" data-invoice-status="pending" aria-pressed="${selectedInvoiceHistoryStatus === "pending"}">Por verificar <span>${pending.length}</span></button><button type="button" class="invoice-history-filter ${selectedInvoiceHistoryStatus === "reviewed" ? "is-active" : ""}" data-invoice-status="reviewed" aria-pressed="${selectedInvoiceHistoryStatus === "reviewed"}">Verificadas <span>${reviewed.length}</span></button></div>${customerInvoiceActionMessage ? `<p class="invoice-action-message" role="status">${escapeHtml(customerInvoiceActionMessage)}</p>` : ""}<div class="client-history-table-wrap"><table class="client-history-table"><thead><tr><th>Fecha y hora para verificar</th><th>Programación de pago</th><th>Estado</th><th>Fecha verificada</th><th>Verificada por</th><th>Acción</th></tr></thead><tbody>${customerInvoiceLoading ? `<tr><td class="invoice-history-empty" colspan="6">Cargando verificaciones de facturas…</td></tr>` : rows || `<tr><td class="invoice-history-empty" colspan="6">${records.length ? `No hay facturas ${statusLabel.toLocaleLowerCase("es")} para este cliente.` : "Este cliente todavía no tiene verificaciones de facturas."}</td></tr>`}</tbody></table></div>`}</section>`;
+}
+async function markCustomerInvoiceReviewed(button) {
+  const id = button.dataset.markInvoiceReviewed;
+  if (!id) return;
+  button.disabled = true;
+  button.textContent = "Guardando…";
+  try {
+    await window.parent.INTERCOL_FIREBASE.setPaymentNotificationReviewed(id, true, currentUserName || "Asesor");
+    customerInvoiceActionMessage = "Factura marcada como verificada.";
+  } catch (error) {
+    console.error("No se pudo marcar la factura como verificada:", error);
+    customerInvoiceActionMessage = error?.code === "permission-denied" ? "No tienes permiso para marcar esta factura como verificada." : "No se pudo guardar el cambio. Inténtalo de nuevo.";
+  }
+  renderClientDetails();
 }
 function renderNotifications() {
   const filter = $("#noticeTypeFilter").value;
@@ -250,7 +321,7 @@ function renderNotifications() {
   open.forEach(item => {
     const article = document.createElement("article"); article.className = "notification-card";
     const owner = item.iniciadoPorUid === currentUserUid;
-    article.innerHTML = `<div><strong>${escapeHtml(processTypeLabel(item.tipo))} · ${escapeHtml(item.clienteNombre || "Cliente")}</strong><span>Cédula: ${escapeHtml(item.clienteCedula || "—")} · Inició ${escapeHtml(formatDate(item.iniciadoEn))}</span><time>Lleva ${escapeHtml(elapsed(item.iniciadoEn))} abierto · ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</time></div>${owner ? `<button type="button" data-resume-notification="${escapeHtml(item.id)}">Continuar</button>` : ""}`;
+    article.innerHTML = `<div><strong>${escapeHtml(processTypeLabel(item.tipo, item.informacion))} · ${escapeHtml(item.clienteNombre || "Cliente")}</strong><span>Cédula: ${escapeHtml(item.clienteCedula || "—")} · Inició ${escapeHtml(formatDate(item.iniciadoEn))}</span><time>Lleva ${escapeHtml(elapsed(item.iniciadoEn))} abierto · ${escapeHtml(item.iniciadoPorNombre || "Asesor")}</time></div>${owner ? `<button type="button" data-resume-notification="${escapeHtml(item.id)}">Continuar</button>` : ""}`;
     article.querySelector("[data-resume-notification]")?.addEventListener("click", () => openProcessWizard(item.id));
     notificationsHost.append(article);
   });
@@ -258,7 +329,24 @@ function renderNotifications() {
 function renderClientDetails() {
   const client = clients.find(item => item.id === selectedClientId);
   if (!client) {
-    detailsHost.innerHTML = `<div class="client-placeholder"><span class="placeholder-icon">♙</span><h2>Ficha del cliente</h2><p>Selecciona un cliente para consultar sus procesos.</p></div>`;
+    const latestProcesses = [...processes].sort((a, b) => (timestampDate(processHistoryDate(b))?.getTime() || 0) - (timestampDate(processHistoryDate(a))?.getTime() || 0)).slice(0, 5);
+    detailsHost.innerHTML = `<section class="recent-processes-panel"><div class="client-processes-heading"><div><span class="eyebrow">ACTIVIDAD RECIENTE</span><h3>Últimos procesos realizados</h3><p>Los cinco procesos más recientes de todos los clientes.</p></div><span class="count-pill">${latestProcesses.length} ${latestProcesses.length === 1 ? "proceso" : "procesos"}</span></div>${latestProcesses.length ? processHistoryTable(latestProcesses, "Todavía no hay procesos registrados.") : `<p class="empty-state">Todavía no hay procesos registrados.</p>`}</section>`;
+    detailsHost.querySelectorAll("[data-toggle-history-row]").forEach(button => button.addEventListener("click", () => {
+      const row = detailsHost.querySelector(`[data-history-detail="${CSS.escape(button.dataset.toggleHistoryRow)}"]`);
+      if (!row) return;
+      row.hidden = !row.hidden;
+      button.setAttribute("aria-expanded", String(!row.hidden));
+      button.textContent = row.hidden ? "Ver" : "Ocultar";
+    }));
+    detailsHost.querySelectorAll("[data-continue-process]").forEach(button => button.addEventListener("click", () => openProcessWizard(button.dataset.continueProcess)));
+    detailsHost.querySelectorAll("[data-delete-process]").forEach(button => button.addEventListener("click", () => deleteProcess(button.dataset.deleteProcess)));
+    detailsHost.querySelectorAll("[data-toggle-process]").forEach(button => button.addEventListener("click", () => {
+      const panel = detailsHost.querySelector(`[data-process-details="${CSS.escape(button.dataset.toggleProcess)}"]`);
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      button.setAttribute("aria-expanded", String(!panel.hidden));
+      button.textContent = panel.hidden ? "Ver tareas" : "Ocultar tareas";
+    }));
     renderClientList(); applyProfileMode(); return;
   }
   const filterType = $("#clientProcessTypeFilter")?.value || "all";
@@ -277,8 +365,9 @@ function renderClientDetails() {
   if ($("#clientProcessTypeFilter")) $("#clientProcessTypeFilter").value = filterType;
   if ($("#clientProcessStatusFilter")) $("#clientProcessStatusFilter").value = filterStatus;
   $("#clientProcessTypeFilter")?.addEventListener("change", renderClientDetails); $("#clientProcessStatusFilter")?.addEventListener("change", renderClientDetails);
-  detailsHost.querySelectorAll("[data-client-tab]").forEach(button => button.addEventListener("click", () => { selectedClientHistoryTab = button.dataset.clientTab; renderClientDetails(); }));
+  detailsHost.querySelectorAll("[data-client-tab]").forEach(button => button.addEventListener("click", () => { selectedClientHistoryTab = button.dataset.clientTab; saveClientPageState(); renderClientDetails(); }));
   detailsHost.querySelectorAll("[data-invoice-status]").forEach(button => button.addEventListener("click", () => { selectedInvoiceHistoryStatus = button.dataset.invoiceStatus; renderClientDetails(); }));
+  detailsHost.querySelectorAll("[data-mark-invoice-reviewed]").forEach(button => button.addEventListener("click", () => markCustomerInvoiceReviewed(button)));
   detailsHost.querySelector("[data-client-status]")?.addEventListener("change", saveInlineClientStatus);
   detailsHost.querySelectorAll("[data-toggle-history-row]").forEach(button => button.addEventListener("click", () => {
     const row = detailsHost.querySelector(`[data-history-detail="${CSS.escape(button.dataset.toggleHistoryRow)}"]`);
@@ -296,7 +385,7 @@ function renderClientDetails() {
     button.setAttribute("aria-expanded", String(!panel.hidden));
     button.textContent = panel.hidden ? "Ver tareas" : "Ocultar tareas";
   }));
-  $("#backToClientList").addEventListener("click", () => { selectedClientId = null; profileMode = false; renderClientDetails(); });
+  $("#backToClientList").addEventListener("click", () => { selectedClientId = null; profileMode = false; saveClientPageState(); renderClientDetails(); });
   $("#editClientProfile").addEventListener("click", () => { editingClientProfileId = editingClientProfileId === client.id ? null : client.id; renderClientDetails(); });
   $("#cancelClientProfile")?.addEventListener("click", () => { editingClientProfileId = null; renderClientDetails(); });
   $("#clientProfileForm")?.addEventListener("submit", saveClientProfile);
@@ -331,7 +420,7 @@ async function deleteProcess(processId) {
   const original = processes.find(item => item.id === processId);
   if (!original || (original.iniciadoPorUid !== currentUserUid && !currentUserIsAdmin)) return;
   const client = clients.find(item => item.id === original.clienteId);
-  const label = processTypeLabel(original.tipo);
+  const label = processTypeLabel(original.tipo, original.informacion);
   if (!window.confirm(`¿Eliminar definitivamente el proceso de ${label} para ${clientName(client || { nombre: original.clienteNombre })}? Esta acción no se puede deshacer.`)) return;
   const previousProcesses = processes;
   processes = processes.filter(item => item.id !== processId);
@@ -362,13 +451,14 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   const client = clients.find(item => item.id === process.clienteId) || { nombre: process.clienteNombre, cedula: process.clienteCedula };
   const completed = currentStep < 0 || process.estado === "completado";
   const task = completed ? null : steps[activeStep];
-  const help = processStepHelp[process.tipo]?.[activeStep] || "Completa esta tarea antes de continuar con el siguiente paso del proceso.";
+  const helpIndex = isCancelledReconnection(process) && !cancelledPlanHasTv(process) && activeStep >= 5 ? activeStep + 1 : activeStep;
+  const help = isCancelledReconnection(process) ? cancelledReconnectionHelp[helpIndex] : (processStepHelp[process.tipo]?.[activeStep] || "Completa esta tarea antes de continuar con el siguiente paso del proceso.");
   const information = { ...(process.informacion || {}), cedulaCliente: String(client.cedula || ""), clienteNombre: clientName(client), valorMensualCliente: client.valorMensual ?? 0, valorReconexion: client.valorReconexion ?? process.informacion?.valorReconexion ?? "", diaPago: process.informacion?.diaPago ?? client.diaPago ?? (process.informacion?.fechaPago ? Number(String(process.informacion.fechaPago).slice(-2)) : ""), ...getWizardInformationDraft(processId) };
-  const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(activeStep, information) : !completed ? renderClientProfileProcessFields(process, activeStep, information, client) : "";
+  const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(process, activeStep, information, client) : !completed ? renderClientProfileProcessFields(process, activeStep, information, client) : "";
   dialog.dataset.activeStep = String(activeStep);
-  const completionMessage = process.tipo === "reconexion" ? "¡Listo! El cliente está completo." : `¡Listo! El proceso de ${processTypeLabel(process.tipo).toLocaleLowerCase("es")} está completo.`;
-  const completionNote = information.notificacionFacturaOmitida ? "Ya había una revisión pendiente; no agregué otra a la lista." : `Se guardaron todas las tareas de ${processTypeLabel(process.tipo).toLocaleLowerCase("es")}.`;
-  dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>${escapeHtml(completionMessage)}</h3><p>${escapeHtml(completionNote)}</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
+  const completionMessage = process.tipo === "reconexion" ? "¡Listo! El cliente está completo." : `¡Listo! El proceso de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")} está completo.`;
+  const completionNote = information.notificacionFacturaOmitida ? "Ya había una revisión pendiente; no agregué otra a la lista." : `Se guardaron todas las tareas de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")}.`;
+  dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo, process.informacion)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>${escapeHtml(completionMessage)}</h3><p>${escapeHtml(completionNote)}</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
   dialog.querySelectorAll("[data-close-process-wizard]").forEach(button => button.addEventListener("click", () => dialog.close()));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => setWizardInformationDraft(processId, readWizardInformation(dialog))));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => updateReconnectionSummaries(dialog)));
@@ -380,7 +470,48 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   dialog.querySelector("[data-complete-process-step]")?.addEventListener("click", completeWizardTask);
   if (!dialog.open) dialog.showModal();
 }
-function renderReconnectionStepFields(step, info) {
+function selectedCancelledPlanDetails(value) {
+  const [group, name, price] = String(value || "").split("|");
+  return { group, name, price: Number(price) || 0 };
+}
+function cancelledPlanOptions(selected = "") {
+  return Object.entries(cancelledReconnectionPlans).map(([group, plans]) => `<optgroup label="Planes ${group}">${plans.map(([name, price]) => {
+    const value = `${group}|${name}|${price}`;
+    return `<option value="${escapeHtml(value)}" ${selected === value ? "selected" : ""}>${escapeHtml(name)} · ${escapeHtml(formatCurrency(price))}</option>`;
+  }).join("")}</optgroup>`).join("");
+}
+function buildCancelledReconnectionAnnotation(info) {
+  const date = new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota" }).format(new Date());
+  const plan = selectedCancelledPlanDetails(info.planReconectado);
+  const day = info.diaPagoReconectar || info.diaPago || "[día]";
+  const technician = String(info.tecnicoReconexion || "[técnico]").trim();
+  const advisor = String(info.asesorReconexion || currentUserName || "[asesor]").trim();
+  return `${date} RECONEXION: Se ajusta fecha de pago a los días ${day} de cada mes - Queda con plan ${plan.name || "[plan]"}${plan.price ? ` ${plan.price}` : ""} - ${technician} - ${advisor}`;
+}
+function renderCancelledReconnectionStepFields(process, step, info, client) {
+  const logicalStep = cancelledPlanHasTv(process) || step < 5 ? step : step + 1;
+  const customerId = encodeURIComponent(client.cedula || info.cedulaCliente || "");
+  const wisphub = `https://wisphub.net/clientes/ver/${customerId}@cibercitywisp/`;
+  const annotationsLink = `${wisphub}#set1`;
+  if (logicalStep === 0) return `<label class="wizard-contact-field">Plan asignado<select data-process-info name="planReconectado" required><option value="">Selecciona el plan</option>${cancelledPlanOptions(info.planReconectado)}</select></label><label class="wizard-contact-field">Día de pago para la anotación (1 al 30)<input data-process-info name="diaPagoReconectar" type="number" inputmode="numeric" min="1" max="30" step="1" value="${escapeHtml(info.diaPagoReconectar || info.diaPago || "")}" required></label><div class="wizard-form-grid"><label class="wizard-contact-field">Técnico<input data-process-info name="tecnicoReconexion" value="${escapeHtml(info.tecnicoReconexion || "")}" placeholder="Nombre del técnico" required></label><label class="wizard-contact-field">Asesor<input data-process-info name="asesorReconexion" value="${escapeHtml(info.asesorReconexion || currentUserName || "")}" placeholder="Nombre del asesor" required></label></div><label class="wizard-contact-field">Anotación lista para copiar<textarea class="wizard-annotation" readonly rows="3">${escapeHtml(buildCancelledReconnectionAnnotation(info))}</textarea></label><button type="button" class="secondary-button" data-copy-annotation>Copiar anotación</button><a class="wizard-external-link" href="${annotationsLink}" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a><label class="wizard-check-confirm"><input data-process-info name="anotacionLista" type="checkbox" value="true" ${info.anotacionLista === "true" ? "checked" : ""} required> Ya hice la anotación en Wisphub</label>`;
+  if (logicalStep === 1) return `<p class="wizard-calculated-amount">Plan seleccionado: <strong>${escapeHtml(selectedCancelledPlanDetails(info.planReconectado).name || "Sin seleccionar")}</strong></p><label class="wizard-contact-field">IP asignada en el RB<input data-process-info name="ipAsignadaRB" value="${escapeHtml(info.ipAsignadaRB || "")}" placeholder="Dirección IP" required></label><a class="wizard-external-link" href="${annotationsLink}" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a>`;
+  if (logicalStep === 2) return `<p>Deja el estado del cliente como Activo en Wisphub.</p><a class="wizard-external-link" href="${annotationsLink}" target="_blank" rel="noopener noreferrer">Abrir anotaciones en Wisphub ↗</a>`;
+  if (logicalStep === 3) {
+    const savedDay = info.diaPago || info.diaPagoReconectar || "";
+    const existingReview = findPendingCustomerInvoice(client.cedula);
+    const reminderField = existingReview ? `<p class="wizard-calculated-amount">Ya existe una generación de factura pendiente; no agregaré otra.</p>` : `<label class="wizard-contact-field">Fecha y hora para generar/revisar la próxima factura<input data-process-info name="fechaHoraRevisionFactura" type="datetime-local" value="${escapeHtml(info.fechaHoraRevisionFactura || defaultReminderDate(savedDay))}" required></label>`;
+    return `<a class="wizard-external-link" href="${wisphub}#retab5" target="_blank" rel="noopener noreferrer">Abrir fecha de pago en Wisphub ↗</a><label class="wizard-contact-field">Día de pago que quedó (1 al 30)<input data-process-info name="diaPago" type="number" inputmode="numeric" min="1" max="30" step="1" value="${escapeHtml(savedDay)}" required></label><p class="wizard-calculated-amount" data-payment-date-summary></p>${reminderField}`;
+  }
+  if (logicalStep === 4) return `<a class="wizard-external-link" href="${wisphub}#retab3" target="_blank" rel="noopener noreferrer">Abrir historial de pago en Wisphub ↗</a><label class="wizard-contact-field">Resultado de la revisión<select data-process-info name="revisionDescuento" required><option value="">Selecciona una opción</option><option value="descuento-ajustado" ${info.revisionDescuento === "descuento-ajustado" ? "selected" : ""}>Ajusté el descuento en la facturación</option><option value="sin-ajuste" ${info.revisionDescuento === "sin-ajuste" ? "selected" : ""}>No fue necesario ajustar el descuento</option></select></label>`;
+  if (logicalStep === 5) return `<a class="wizard-external-link" href="${wisphub}#set-telefonia-television" target="_blank" rel="noopener noreferrer">Abrir televisión en Wisphub ↗</a><label class="wizard-check-confirm"><input data-process-info name="televisionAsignada" type="checkbox" value="true" ${info.televisionAsignada === "true" ? "checked" : ""} required> Ya asigné la televisión al cliente</label>`;
+  if (logicalStep === 6) {
+    const smartoltUrl = `https://intercolwisp.smartolt.com/onu/configured?free_text=${customerId}&sort_by=id&sort_order=desc`;
+    return `<a class="wizard-external-link" href="${smartoltUrl}" target="_blank" rel="noopener noreferrer">Abrir cliente en SmartOLT ↗</a><p>Configura la dirección, el puerto y la caja del cliente.</p><label class="wizard-check-confirm"><input data-process-info name="smartoltConfigurado" type="checkbox" value="true" ${info.smartoltConfigurado === "true" ? "checked" : ""} required> Ya configuré la dirección, el puerto y la caja en SmartOLT</label>`;
+  }
+  return "";
+}
+function renderReconnectionStepFields(process, step, info, client) {
+  if (isCancelledReconnection(process)) return renderCancelledReconnectionStepFields(process, step, info, client);
   if (step === 0) {
     const selectedFee = String(info.valorReconexion ?? "");
     return `<label class="wizard-contact-field" for="wizardReconnectionFee">Valor de reconexión<select id="wizardReconnectionFee" data-process-info name="valorReconexion" required><option value="">Selecciona cuánto se le cobra</option><option value="15000" ${selectedFee === "15000" ? "selected" : ""}>$15.000</option><option value="20000" ${selectedFee === "20000" ? "selected" : ""}>$20.000</option></select></label>`;
@@ -434,12 +565,13 @@ function updateReconnectionSummaries(dialog) {
   const process = processes.find(item => item.id === dialog.dataset.processId);
   const information = { ...(process?.informacion || {}), ...readWizardInformation(dialog), valorMensualCliente: clients.find(item => item.id === process?.clienteId)?.valorMensual ?? 0 };
   const charge = dialog.querySelector("[data-invoice-total]"); if (charge) charge.textContent = formatCurrency(calculateReconnectionTotal(information));
-  const annotation = dialog.querySelector(".wizard-annotation"); if (annotation) annotation.value = buildReconnectionAnnotation(information);
+  const annotation = dialog.querySelector(".wizard-annotation"); if (annotation) annotation.value = isCancelledReconnection(process) ? buildCancelledReconnectionAnnotation(information) : buildReconnectionAnnotation(information);
   if (dialog.querySelector("[data-reajuste-summary]")) updateReajusteSummary(dialog, dialog.querySelector('[name="valorReajuste"]')?.value);
-  const day = dialog.querySelector('[name="diaPago"]')?.value;
+  const day = dialog.querySelector('[name="diaPago"]')?.value || dialog.querySelector('[name="diaPagoReconectar"]')?.value;
   const summary = dialog.querySelector("[data-payment-date-summary]");
-  if (summary) summary.textContent = day ? `Se guardará el día ${day} de cada mes en la ficha del cliente.` : "Escribe únicamente el día del mes, entre 1 y 30.";
+  if (summary) summary.textContent = day ? `Pago: día ${day} de cada mes. Corte: día ${addDaysOnThirtyDayCycle(day)} de cada mes (dos días después, sin día 31).` : "Escribe únicamente el día del mes, entre 1 y 30.";
 }
+function addDaysOnThirtyDayCycle(day, offset = 2) { return ((Number(day) - 1 + offset) % 30) + 1; }
 function renderClientProfileProcessFields(process, step, info, client) {
   if (process.tipo === "cambio-plan") {
     if (step === 0) return `<p class="wizard-calculated-amount">Plan registrado actualmente: <strong>${escapeHtml(client.plan || "Sin registrar")}</strong></p>`;
@@ -509,6 +641,7 @@ async function completeWizardTask(event) {
   const process = processes.find(item => item.id === processId);
   if (!process || process.iniciadoPorUid !== currentUserUid) return;
   const steps = getProcessSteps(process);
+  const cancelledReconnect = isCancelledReconnection(process);
   const checked = getCheckedProcessSteps(process);
   if (steps.findIndex((_, stepIndex) => !checked.has(stepIndex)) !== index) return;
   const dialog = $("#processStepDialog");
@@ -518,7 +651,7 @@ async function completeWizardTask(event) {
     const status = $(".wizard-status"); if (status) { status.textContent = "Completa los datos de esta tarea antes de continuar."; status.classList.add("is-error"); }
     missingField.focus(); return;
   }
-  if (process.tipo === "reconexion" && index === 3 && !fields.some(field => ["pagaMes", "pagaReajuste"].includes(field.name) && field.checked)) {
+  if (process.tipo === "reconexion" && !cancelledReconnect && index === 3 && !fields.some(field => ["pagaMes", "pagaReajuste"].includes(field.name) && field.checked)) {
     const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona si el cliente paga Mes, Reajuste o ambos."; status.classList.add("is-error"); }
     dialog.querySelector('[name="pagaMes"]')?.focus(); return;
   }
@@ -539,19 +672,34 @@ async function completeWizardTask(event) {
     const day = Number(informacion.nuevoDiaPago);
     if (!Number.isInteger(day) || day < 1 || day > 31) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra el nuevo día de pago en la tarea anterior para actualizar la ficha."; status.classList.add("is-error"); } return; }
     profileChanges = { diaPago: day };
-  } else if (process.tipo === "reconexion" && index === 0) {
+  } else if (process.tipo === "reconexion" && !cancelledReconnect && index === 0) {
     const fee = Number(informacion.valorReconexion);
     if (![15000, 20000].includes(fee)) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona $15.000 o $20.000 para guardar el cobro de reconexión."; status.classList.add("is-error"); } return; }
     informacion.valorReconexion = fee;
     profileChanges = { valorReconexion: fee };
-  } else if (process.tipo === "reconexion" && index === 1) {
+  } else if (process.tipo === "reconexion" && !cancelledReconnect && index === 1) {
     if (!["reajuste", "mes_reajuste", "nueva_reajuste"].includes(informacion.accionFactura)) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona la acción que realizaste en la factura."; status.classList.add("is-error"); } return; }
     informacion.totalCobrar = calculateReconnectionTotal(informacion);
-  } else if (process.tipo === "reconexion" && index === 2) {
+  } else if (process.tipo === "reconexion" && !cancelledReconnect && index === 2) {
     const day = Number(informacion.diaPago);
     if (!Number.isInteger(day) || day < 1 || day > 30) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe únicamente un número del 1 al 30."; status.classList.add("is-error"); } return; }
     informacion.diaPago = day;
-    profileChanges = { diaPago: day };
+    informacion.diaCorte = addDaysOnThirtyDayCycle(day);
+    profileChanges = { diaPago: day, diaCorte: informacion.diaCorte };
+  }
+  if (cancelledReconnect && index === 1) {
+    const plan = selectedCancelledPlanDetails(informacion.planReconectado);
+    if (!plan.name || !plan.price) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona un plan válido en la primera tarea."; status.classList.add("is-error"); } return; }
+    informacion.ipAsignadaRB = String(informacion.ipAsignadaRB || "").trim();
+    profileChanges = { plan: plan.name, valorMensual: plan.price };
+  } else if (cancelledReconnect && index === 2) {
+    profileChanges = { estadoCliente: "activo" };
+  } else if (cancelledReconnect && index === 3) {
+    const day = Number(informacion.diaPago);
+    if (!Number.isInteger(day) || day < 1 || day > 30) { const status = $(".wizard-status"); if (status) { status.textContent = "Escribe únicamente un número del 1 al 30."; status.classList.add("is-error"); } return; }
+    informacion.diaPago = day;
+    informacion.diaCorte = addDaysOnThirtyDayCycle(day);
+    profileChanges = { diaPago: day, diaCorte: informacion.diaCorte };
   }
   checked.add(index);
   const pasosVerificados = [...checked].sort((a, b) => a - b);
@@ -599,7 +747,28 @@ async function completeWizardTask(event) {
     renderClientDetails(); renderNotifications();
   }
 }
-function selectClient(id) { selectedClientId = id; selectedClientHistoryTab = "resumen"; selectedInvoiceHistoryStatus = "pending"; profileMode = true; renderClientDetails(); }
+function clientPageStateKey(uid = currentUserUid) { return uid ? `intercol:clientes:pagina:${uid}` : ""; }
+function saveClientPageState() {
+  const key = clientPageStateKey();
+  if (!key) return;
+  try {
+    if (!profileMode || !selectedClientId) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify({ clientId: selectedClientId, tab: selectedClientHistoryTab, invoiceStatus: selectedInvoiceHistoryStatus }));
+  } catch { /* La navegación sigue funcionando si el navegador bloquea el almacenamiento. */ }
+}
+function restoreClientPageState(uid) {
+  const key = clientPageStateKey(uid);
+  if (!key) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || "null");
+    if (!saved?.clientId) return;
+    selectedClientId = String(saved.clientId);
+    selectedClientHistoryTab = ["resumen", "reconexiones", "planes", "pagos", "facturas"].includes(saved.tab) ? saved.tab : "resumen";
+    selectedInvoiceHistoryStatus = saved.invoiceStatus === "reviewed" ? "reviewed" : "pending";
+    profileMode = true;
+  } catch { /* Se abre la lista si el estado guardado no es válido. */ }
+}
+function selectClient(id) { selectedClientId = id; selectedClientHistoryTab = "resumen"; selectedInvoiceHistoryStatus = "pending"; profileMode = true; saveClientPageState(); renderClientDetails(); }
 $("#clientSearch").addEventListener("input", renderClientList);
 $("#noticeTypeFilter").addEventListener("change", renderNotifications);
 window.addEventListener("message", event => {
@@ -614,6 +783,7 @@ window.addEventListener("message", event => {
     isAuthenticated = false; currentUserUid = ""; currentUserName = ""; currentUserIsAdmin = false; stopClientsSync?.(); stopProcessesSync?.(); stopCustomerInvoiceSync?.(); stopClientsSync = stopProcessesSync = stopCustomerInvoiceSync = null; clients = []; processes = []; customerInvoiceRecords = []; customerInvoiceLoadError = ""; customerInvoiceLoading = false; selectedClientId = null; profileMode = false;
       $("#syncStatus").textContent = "Inicia sesión para ver los clientes"; clientsHost.innerHTML = `<p class="empty-state">Inicia sesión para consultar las fichas y los procesos.</p>`; notificationsHost.innerHTML = `<p class="empty-state">Inicia sesión para consultar los procesos abiertos.</p>`; renderClientDetails(); return;
     }
+    if (!isAuthenticated || currentUserUid !== uid) restoreClientPageState(uid);
     if (!isAuthenticated || currentUserUid !== uid) connectData(uid);
     currentUserName = String(event.data.profile?.asesor || event.data.profile?.nombre || "").trim();
     currentUserIsAdmin = event.data.isAdmin === true || String(event.data.profile?.rol || "").toLocaleLowerCase("es") === "administrador";
@@ -624,6 +794,7 @@ window.addEventListener("message", event => {
     selectedClientHistoryTab = "resumen";
     selectedInvoiceHistoryStatus = "pending";
     profileMode = true;
+    saveClientPageState();
     $("#clientSearch").value = "";
     renderClientList(); renderClientDetails();
     if (event.data.processType) {

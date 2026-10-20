@@ -347,13 +347,14 @@ export function updateClientProfile(id, profile) {
   return updateDoc(doc(firestore, "clientes", id), { ...cleanClientProfile(profile), actualizadoEn: serverTimestamp() });
 }
 export function subscribeClientProcesses(onChange, onError) { return onSnapshot(clientProcesses, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
-export function createClientProcess({ client, type, user }) {
+export function createClientProcess({ client, type, user, reconexionClienteCancelado = false }) {
   const stepsByType = {
     reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
     "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
     "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
   };
   const initialInformation = {
+    ...(type === "reconexion" ? { reconexionClienteCancelado: reconexionClienteCancelado === true } : {}),
     ...(type === "cambio-plan" ? { planAnterior: String(client.plan || ""), valorMensualAnterior: client.valorMensual ?? null } : {}),
     ...(type === "cambio-fecha-pago" || type === "reconexion" ? { diaPagoAnterior: client.diaPago ?? null, fechaPagoAnterior: String(client.fechaPago || "") } : {})
   };

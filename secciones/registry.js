@@ -76,14 +76,14 @@ window.INTERCOL_SECTIONS = [
     name: "Clientes",
     description: "Consulta fichas de clientes e inicia el seguimiento de sus procesos.",
     icon: "♙",
-    path: "secciones/clientes/index.html?v=20261019-omitir-revision-duplicada"
+    path: "secciones/clientes/index.html?v=20261020-procesos-recientes"
   },
   {
     id: "reporte-servicio",
     name: "Reporte servicio",
     description: "Prepara reportes de caja ponchada y autorización de splitter.",
     icon: "▤",
-    path: "secciones/reporte-servicio/index.html"
+    path: "secciones/reporte-servicio/index.html?v=20261020-interbot-boton-copiar"
   }
 ];
 
