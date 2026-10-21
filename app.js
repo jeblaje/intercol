@@ -17,6 +17,7 @@ const state = {
   workspaceRole: "",
   adminPanelAccess: false,
   chatAccess: false,
+  chatUnreadCount: 0,
   sectionPermissions: null,
   systemAdmin: false,
   pendingSectionId: null,
@@ -132,6 +133,14 @@ function renderSidebar() {
   const chatLink = $("#chatNavLink");
   if (chatLink) {
     chatLink.hidden = !state.chatAccess;
+    const unreadBadge = $("#chatUnreadBadge");
+    if (unreadBadge) {
+      const count = state.chatUnreadCount || 0;
+      unreadBadge.hidden = count === 0;
+      unreadBadge.textContent = count > 9 ? "9+" : String(count);
+      unreadBadge.setAttribute("aria-label", `${count} ${count === 1 ? "mensaje nuevo" : "mensajes nuevos"}`);
+      chatLink.classList.toggle("has-unread", count > 0);
+    }
     if (!chatLink.dataset.bound) {
       chatLink.dataset.bound = "true";
       chatLink.addEventListener("click", event => {
@@ -921,6 +930,27 @@ function startInvoiceNotificationSync() {
   }, error => console.error("No se pudieron revisar las alertas de facturas:", error));
 }
 setInterval(fireInvoiceBrowserAlerts, 15000);
+let stopChatUnreadSync = null;
+let chatUnreadSubscriptionKey = null;
+function startChatUnreadSync() {
+  const firebase = window.INTERCOL_FIREBASE;
+  const uid = state.currentUser?.uid || null;
+  const subscriptionKey = uid && state.chatAccess ? uid : null;
+  if (chatUnreadSubscriptionKey === subscriptionKey && (stopChatUnreadSync || !subscriptionKey)) return;
+  if (stopChatUnreadSync) { stopChatUnreadSync(); stopChatUnreadSync = null; }
+  chatUnreadSubscriptionKey = subscriptionKey;
+  state.chatUnreadCount = 0;
+  if (!subscriptionKey || !firebase?.subscribeChatConversations) { renderSidebar(); return; }
+  stopChatUnreadSync = firebase.subscribeChatConversations(uid, items => {
+    const toMillis = value => value?.toDate ? value.toDate().getTime() : (value instanceof Date ? value.getTime() : Number(value) || 0);
+    state.chatUnreadCount = items.filter(item => {
+      if (item.lastMessageSenderUid === uid) return false;
+      return (item.lastMessageAtMs || 0) > toMillis(item.lastReadAtByUid?.[uid]);
+    }).length;
+    renderSidebar();
+  }, error => console.warn("No se pudo actualizar el indicador de mensajes del chat:", error));
+  renderSidebar();
+}
 let stopAuthSync = null;
 async function handleAdvisorAuth(user) {
   const firebase = window.INTERCOL_FIREBASE;
@@ -953,6 +983,7 @@ async function handleAdvisorAuth(user) {
     }
   }
   renderSidebar();
+  startChatUnreadSync();
   startInvoiceNotificationSync();
   const active = state.sections.find(item => item.id === state.activeSectionId);
   if (active && !canViewSection(active.id)) openSection(active.id);

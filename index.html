@@ -31,7 +31,7 @@
           <span>SECCIONES</span>
         </div>
         <div class="session-list" id="sectionList" aria-live="polite"></div>
-          <a class="nav-item chat-nav-link" id="chatNavLink" href="secciones/chat/index.html" hidden><span class="nav-icon">◉</span><span>Chat</span></a>
+          <a class="nav-item chat-nav-link" id="chatNavLink" href="secciones/chat/index.html" hidden><span class="nav-icon">◉</span><span>Chat</span><span class="chat-unread-badge" id="chatUnreadBadge" aria-live="polite" hidden></span></a>
         <div class="empty-sessions hidden" id="emptySections">
           <span class="empty-icon">＋</span>
           <p>No hay secciones registradas.</p>
@@ -82,7 +82,7 @@
   </div>
 
   <script src="secciones/registry.js?v=20261021-chat-real-v2"></script>
-  <script src="app.js?v=20261021-chat-real-v2"></script>
+  <script src="app.js?v=20261021-chat-unread-v1"></script>
   <script type="module" src="admin/firebase-config.js?v=20261021-chat-real-v2"></script>
 </body>
 </html>
