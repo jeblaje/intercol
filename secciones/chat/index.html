@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat de asesores · INTERCOL</title>
+  <link rel="stylesheet" href="style.css?v=20261021-chat-real-v2">
+</head>
+<body>
+  <main class="chat-app">
+    <aside class="chat-sidebar">
+      <div class="chat-brand"><div class="brand-mark">I</div><div><strong>INTERCOL</strong><span>CHAT DE ASESORES</span></div><button class="new-chat" id="newChatButton" type="button" title="Buscar asesor" aria-label="Buscar asesor">＋</button></div>
+      <div class="sidebar-heading"><h2 id="listHeading">Asesores registrados</h2><span id="chatCount" class="count-pill">0</span></div>
+      <label class="search-box"><span aria-hidden="true">⌕</span><input id="advisorSearch" type="search" placeholder="Buscar asesores" autocomplete="off"></label>
+      <div class="chat-tabs" role="tablist" aria-label="Conversaciones o asesores"><button id="personalTab" type="button" role="tab" aria-selected="false">Personales</button><button class="active" id="advisorsTab" type="button" role="tab" aria-selected="true">Asesores</button></div>
+      <div class="contact-list" id="contactList" aria-live="polite"></div>
+      <div class="chat-account"><div class="avatar self-avatar" id="selfAvatar">YO</div><div class="account-name"><strong id="selfName">Tu cuenta</strong><span>Asesor</span></div><span class="online-dot" title="En línea"></span></div>
+    </aside>
+    <section class="conversation-pane">
+      <header class="conversation-topbar" id="conversationTopbar"><div class="active-contact"><div class="avatar" id="activeAvatar">◉</div><div><strong id="activeName">Chat de asesores</strong><span id="activePresence">Selecciona un asesor para conversar</span></div></div><button class="info-button" id="conversationInfo" type="button" aria-label="Información de la conversación" title="Información">ⓘ</button></header>
+      <div class="message-area" id="messageArea"><div class="welcome-state"><div class="welcome-icon">◉</div><h2>Habla con tu equipo</h2><p>Elige un chat o busca un asesor registrado.</p></div></div>
+      <div class="typing-status" id="typingStatus" aria-live="polite" hidden><span class="typing-dots"><i></i><i></i><i></i></span><span id="typingText">Está escribiendo</span></div>
+      <form class="message-composer" id="messageForm"><button class="composer-add" type="button" id="focusSearch" title="Buscar asesor" aria-label="Buscar asesor">＋</button><div class="composer-wrap"><textarea id="messageInput" rows="1" maxlength="4000" placeholder="Selecciona un asesor para enviarle un mensaje" disabled></textarea><small>Enter para enviar · Shift + Enter para nueva línea</small></div><button class="send-button" type="submit" disabled aria-label="Enviar mensaje">➤</button></form>
+      <div class="chat-notice" id="chatNotice" role="status" aria-live="polite"></div>
+    </section>
+    <aside class="profile-sidebar" id="profileSidebar"><button class="close-profile" id="closeProfile" type="button" aria-label="Cerrar información">×</button><div class="profile-card"><div class="avatar profile-avatar" id="profileAvatar">◉</div><strong id="profileName">Perfil del asesor</strong><span id="profileRole">INTERCOL</span></div><div class="profile-details"><h3>Información</h3><div><span>Estado</span><strong id="profileStatus">—</strong></div><div><span>Usuario</span><strong id="profileUsername">—</strong></div></div><a class="workspace-link" href="../../index.html">← Volver a INTERCOL</a></aside>
+  </main>
+  <script type="module" src="script.js?v=20261021-chat-real-v2"></script>
+</body>
+</html>

@@ -46,6 +46,19 @@ service cloud.firestore {
       let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
       return signedIn() && exists(advisorPath);
     }
+    function hasChatAccess() {
+      let advisorPath = /databases/$(database)/documents/asesores/$(request.auth.uid);
+      let roleId = exists(advisorPath) ? get(advisorPath).data.get('rol', 'asesor') : 'asesor';
+      let rolePath = /databases/$(database)/documents/rolesAsesores/$(roleId);
+      let permissions = exists(rolePath) ? get(rolePath).data.get('permisos', {}) : {};
+      return isSystemAdmin() || (isRegisteredAdvisor() && (
+        (roleId == 'asesor' && (!(permissions is map) || !('chat' in permissions)
+          || !(permissions.chat is map) || !('acceder' in permissions.chat)
+          || permissions.chat.acceder != false))
+        || (permissions is map && permissions.get('chat', {}) is map
+          && permissions.get('chat', {}).get('acceder', false) == true)
+      ));
+    }
     match /smsTemp/{messageId} {
       allow read: if true;
       allow create: if signedIn() && hasSectionPermission('mensajes-temporales', 'crear');
@@ -159,6 +172,98 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'usuario', 'email', 'actualizadoEn']);
       allow delete: if false;
+    }
+    match /chatDirectorio/{advisorUid} {
+      allow read: if hasChatAccess();
+      allow create: if hasChatAccess() && request.auth.uid == advisorUid
+        && request.resource.data.keys().hasOnly(['uid', 'nombre', 'usuario', 'online', 'lastSeenAt', 'typingConversationId', 'typingUntil', 'updatedAt'])
+        && request.resource.data.uid == advisorUid
+        && request.resource.data.nombre == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('asesor', '')
+        && request.resource.data.usuario == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('usuario', '')
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 100
+        && request.resource.data.usuario is string && request.resource.data.usuario.size() <= 40
+        && request.resource.data.online is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.typingConversationId is string;
+      allow create: if (isSystemAdmin() || hasSectionPermission('roles-permisos', 'ver') || hasAdminPanelPermission('asesores'))
+        && request.resource.data.keys().hasOnly(['uid', 'nombre', 'usuario', 'online', 'lastSeenAt', 'typingConversationId', 'typingUntil', 'updatedAt'])
+        && request.resource.data.uid == advisorUid
+        && request.resource.data.nombre == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('asesor', '')
+        && request.resource.data.usuario == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('usuario', '')
+        && request.resource.data.online == false
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.typingConversationId == ''
+        && request.resource.data.typingUntil == null;
+      allow update: if hasChatAccess() && request.auth.uid == advisorUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'usuario', 'online', 'lastSeenAt', 'typingConversationId', 'typingUntil', 'updatedAt'])
+        && request.resource.data.uid == advisorUid
+        && request.resource.data.nombre == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('asesor', '')
+        && request.resource.data.usuario == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('usuario', '')
+        && request.resource.data.online is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.typingConversationId is string;
+      allow update: if (isSystemAdmin() || hasSectionPermission('roles-permisos', 'ver') || hasAdminPanelPermission('asesores'))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'nombre', 'usuario', 'online', 'lastSeenAt', 'typingConversationId', 'typingUntil', 'updatedAt'])
+        && request.resource.data.uid == advisorUid
+        && request.resource.data.nombre == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('asesor', '')
+        && request.resource.data.usuario == get(/databases/$(database)/documents/asesores/$(advisorUid)).data.get('usuario', '')
+        && request.resource.data.online == false
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.typingConversationId == ''
+        && request.resource.data.typingUntil == null;
+      allow delete: if false;
+    }
+    match /conversacionesChat/{conversationId} {
+      allow read: if hasChatAccess() && request.auth.uid in resource.data.participantUids;
+      allow create: if hasChatAccess()
+        && request.resource.data.keys().hasOnly(['participantUids', 'participantNames', 'updatedAt', 'lastMessageText', 'lastMessageSenderUid', 'lastMessageSenderName', 'lastMessageAt', 'lastReadAtByUid'])
+        && request.resource.data.participantUids is list
+        && request.resource.data.participantUids.size() == 2
+        && request.auth.uid in request.resource.data.participantUids
+        && request.resource.data.participantNames is map
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastMessageSenderUid == request.auth.uid
+        && request.resource.data.lastMessageText is string
+        && request.resource.data.lastMessageText.size() > 0
+        && request.resource.data.lastMessageText.size() <= 4000
+        && request.resource.data.lastMessageAt == request.time;
+      allow update: if hasChatAccess() && request.auth.uid in resource.data.participantUids
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastMessageText', 'lastMessageSenderUid', 'lastMessageSenderName', 'lastMessageAt', 'participantNames', 'lastReadAtByUid'])
+        && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastReadAtByUid'])
+          && request.resource.data.lastReadAtByUid is map
+          && request.resource.data.lastReadAtByUid.diff(resource.data.get('lastReadAtByUid', {})).affectedKeys().hasOnly([request.auth.uid])
+          && request.resource.data.lastReadAtByUid.get(request.auth.uid, null) == request.time)
+          || (request.resource.data.lastMessageSenderUid == request.auth.uid
+            && request.resource.data.lastMessageText is string
+            && request.resource.data.lastMessageText.size() > 0
+            && request.resource.data.lastMessageText.size() <= 4000
+            && request.resource.data.lastMessageAt == request.time));
+      allow delete: if false;
+      match /mensajes/{messageId} {
+        function parentConversation() {
+          return getAfter(/databases/$(database)/documents/conversacionesChat/$(conversationId)).data;
+        }
+        allow read: if hasChatAccess()
+          && request.auth.uid in get(/databases/$(database)/documents/conversacionesChat/$(conversationId)).data.participantUids;
+        allow create: if hasChatAccess()
+          && request.resource.data.keys().hasOnly(['senderUid', 'senderName', 'recipientUid', 'text', 'createdAt', 'readAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.senderName is string
+          && request.resource.data.recipientUid != request.auth.uid
+          && request.resource.data.recipientUid in parentConversation().participantUids
+          && request.auth.uid in parentConversation().participantUids
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.readAt == null;
+        allow update: if hasChatAccess()
+          && resource.data.recipientUid == request.auth.uid
+          && resource.data.readAt == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+          && request.resource.data.readAt == request.time;
+        allow delete: if false;
+      }
     }
     match /rolesAsesores/{roleId} {
       allow read: if signedIn();

@@ -130,7 +130,16 @@ function renderSidebar() {
   });
   const account = $("#accountArea");
   const chatLink = $("#chatNavLink");
-  if (chatLink) chatLink.hidden = !state.chatAccess;
+  if (chatLink) {
+    chatLink.hidden = !state.chatAccess;
+    if (!chatLink.dataset.bound) {
+      chatLink.dataset.bound = "true";
+      chatLink.addEventListener("click", event => {
+        event.preventDefault();
+        window.location.href = chatLink.href;
+      });
+    }
+  }
   const workspaceRole = $("#workspaceRole");
   if (workspaceRole) workspaceRole.textContent = state.currentUser ? (state.workspaceRole || "Asesor") : "INTERCOL";
   if (workspaceRole) {
@@ -1027,7 +1036,7 @@ startSupportConfigSync();
 window.addEventListener("intercol-firebase-ready", startAdjustmentZonesSync);
 startAdjustmentZonesSync();
 
-document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+document.querySelectorAll(".nav-item[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 $("#startClientProcess").addEventListener("click", () => openClientProcessDialog());
 $("#themeToggle").addEventListener("click", toggleTheme);
 $("#themePill").addEventListener("click", toggleTheme);

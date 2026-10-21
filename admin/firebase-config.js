@@ -1,7 +1,7 @@
 // Configuración e inicialización de Firebase para INTERCOL.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, updatePassword, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
-import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where, setDoc, writeBatch, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 export const firebaseConfig = { apiKey: "AIzaSyDK0tK8yptJYD8R6f0VkoiyW2Lekl9KKAQ", authDomain: "intercol-784d9.firebaseapp.com", projectId: "intercol-784d9", storageBucket: "intercol-784d9.firebasestorage.app", messagingSenderId: "380146455867", appId: "1:380146455867:web:2d3b17e736f16ce88a931e" };
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firestore = getFirestore(firebaseApp);
@@ -16,6 +16,8 @@ const boxNeighborhoods = collection(firestore, "barriosCajas");
 const boxZones = collection(firestore, "zonasCajas");
 const clients = collection(firestore, "clientes");
 const clientProcesses = collection(firestore, "procesosClientes");
+const chatDirectory = collection(firestore, "chatDirectorio");
+const chatConversations = collection(firestore, "conversacionesChat");
 const cleanBoxNumberValue = value => {
   const original = String(value ?? "").trim();
   const numeric = original.replace(/[^0-9-]/g, "");
@@ -51,6 +53,13 @@ async function saveAdvisorProfile(user, advisorName, username, recoveryEmail = "
     // Firebase Auth applies the new address only after its verification link is opened.
     // Sync the profile on the next sign-in, when Auth reports the verified address.
     await setDoc(profileRef, { email: verifiedEmail, correoRecuperacion: verifiedEmail }, { merge: true });
+  }
+  try {
+    const latest = await getDoc(profileRef);
+    if (latest.exists()) await ensureChatAdvisorProfile(user.uid, latest.data());
+  } catch (error) {
+    // Chat access or its Firestore rules may not be published yet; sign-in must still work.
+    console.warn("No se pudo sincronizar el directorio de asesores para Chat:", error);
   }
   if (verifiedEmail) await saveUsernameLoginAlias(username || existing.data()?.usuario, user, verifiedEmail);
 }
@@ -121,6 +130,82 @@ export function saveAdvisorRole(roleId, name, permissions, updatedBy) { return s
 export function deleteAdvisorRole(roleId) { return deleteDoc(doc(firestore, "rolesAsesores", roleId)); }
 export function assignAdvisorRole(uid, roleId, updatedBy) { return updateDoc(doc(firestore, "asesores", uid), { rol: roleId, rolActualizadoPor: updatedBy, rolActualizadoEn: serverTimestamp() }); }
 export function observeAuth(callback) { return onAuthStateChanged(auth, callback); }
+function chatDate(value) { return value?.toDate ? value.toDate() : value ? new Date(value) : null; }
+function normalizeChatConversation(item) {
+  const data = item.data();
+  return { id: item.id, ...data, lastMessageAtMs: chatDate(data.lastMessageAt)?.getTime() || 0 };
+}
+function normalizeChatMessage(item) {
+  const data = item.data();
+  return { id: item.id, ...data, createdAtMs: chatDate(data.createdAt)?.getTime() || 0, readAtMs: chatDate(data.readAt)?.getTime() || 0 };
+}
+export async function ensureChatAdvisorProfile(uid, profile) {
+  if (!uid || auth.currentUser?.uid !== uid || !profile) throw new Error("Inicia sesión como asesor para abrir el chat.");
+  const name = String(profile.asesor || profile.usuario || auth.currentUser.displayName || "Asesor").trim().slice(0, 100);
+  const username = String(profile.usuario || "").trim().slice(0, 40);
+  const ref = doc(chatDirectory, uid);
+  await setDoc(ref, { uid, nombre: name, usuario: username, online: true, lastSeenAt: serverTimestamp(), typingConversationId: "", typingUntil: null, updatedAt: serverTimestamp() }, { merge: true });
+}
+export async function seedChatDirectoryForExistingAdvisors() {
+  const user = auth.currentUser;
+  if (!user) return [];
+  // Firestore rules decide whether this account can consult registered advisor profiles.
+  // Privileged managers get the real profiles; other advisors fall back to the sanitized directory.
+  const profiles = await listAdvisorProfiles();
+  let existingSnapshot = { docs: [] };
+  try { existingSnapshot = await getDocs(chatDirectory); } catch (error) { console.warn("No se pudo leer todavía el directorio compartido; se mostrarán los perfiles reales disponibles para esta cuenta:", error); }
+  const known = new Set(existingSnapshot.docs.map(item => item.id));
+  const missing = profiles.filter(profile => !known.has(profile.id));
+  for (let start = 0; start < missing.length; start += 450) {
+    const batch = writeBatch(firestore);
+    missing.slice(start, start + 450).forEach(profile => {
+      const name = String(profile.asesor || profile.usuario || "Asesor").trim().slice(0, 100);
+      batch.set(doc(chatDirectory, profile.id), { uid: profile.id, nombre: name, usuario: String(profile.usuario || "").trim().slice(0, 40), online: false, lastSeenAt: serverTimestamp(), typingConversationId: "", typingUntil: null, updatedAt: serverTimestamp() });
+    });
+    try { await batch.commit(); }
+    catch (error) { console.warn("No se pudieron sincronizar los perfiles con el directorio compartido. Publica firestore.rules para habilitar el chat entre asesores:", error); }
+  }
+  return profiles.map(profile => ({ uid: profile.id, id: profile.id, nombre: String(profile.asesor || profile.usuario || "Asesor"), usuario: String(profile.usuario || ""), online: false, lastSeenAt: null, typingConversationId: "", typingUntil: null }));
+}
+export function subscribeChatDirectory(onChange, onError) {
+  return onSnapshot(chatDirectory, snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError);
+}
+export function subscribeChatConversations(uid, onChange, onError) {
+  return onSnapshot(query(chatConversations, where("participantUids", "array-contains", uid)), snapshot => onChange(snapshot.docs.map(normalizeChatConversation).sort((a, b) => b.lastMessageAtMs - a.lastMessageAtMs)), onError);
+}
+export function subscribeChatMessages(conversationId, onChange, onError) {
+  return onSnapshot(query(collection(firestore, "conversacionesChat", conversationId, "mensajes"), orderBy("createdAt", "desc"), limit(150)), snapshot => onChange(snapshot.docs.map(normalizeChatMessage).reverse()), onError);
+}
+export function createChatConversationAndSend({ otherUid, senderUid, senderName, recipientName, text }) {
+  const participantUids = [senderUid, otherUid].sort();
+  const conversationId = participantUids.join("_");
+  const conversationRef = doc(chatConversations, conversationId);
+  const messageRef = doc(collection(conversationRef, "mensajes"));
+  const cleanText = String(text || "").trim().slice(0, 4000);
+  if (!cleanText || !otherUid || senderUid !== auth.currentUser?.uid) throw new Error("Escribe un mensaje válido.");
+  const batch = writeBatch(firestore);
+  batch.set(conversationRef, { participantUids, participantNames: { [senderUid]: senderName, [otherUid]: recipientName }, updatedAt: serverTimestamp(), lastMessageText: cleanText, lastMessageSenderUid: senderUid, lastMessageSenderName: senderName, lastMessageAt: serverTimestamp() }, { merge: true });
+  batch.set(messageRef, { senderUid, senderName, recipientUid: otherUid, text: cleanText, createdAt: serverTimestamp(), readAt: null });
+  return batch.commit();
+}
+export async function markChatConversationRead(conversationId, uid) {
+  if (!conversationId || uid !== auth.currentUser?.uid) return;
+  const conversationRef = doc(chatConversations, conversationId);
+  const messageRef = collection(conversationRef, "mensajes");
+  const unread = await getDocs(query(messageRef, where("recipientUid", "==", uid), where("readAt", "==", null), limit(450)));
+  const batch = writeBatch(firestore);
+  unread.docs.forEach(item => batch.update(item.ref, { readAt: serverTimestamp() }));
+  batch.update(conversationRef, { [`lastReadAtByUid.${uid}`]: serverTimestamp(), updatedAt: serverTimestamp() });
+  await batch.commit();
+}
+export function updateChatAdvisorPresence(uid, online = true) {
+  if (uid !== auth.currentUser?.uid) return Promise.resolve();
+  return updateDoc(doc(chatDirectory, uid), { online: Boolean(online), lastSeenAt: serverTimestamp(), ...(!online ? { typingConversationId: "", typingUntil: null } : {}), updatedAt: serverTimestamp() });
+}
+export function updateChatTyping(uid, conversationId = "") {
+  if (uid !== auth.currentUser?.uid) return Promise.resolve();
+  return updateDoc(doc(chatDirectory, uid), { typingConversationId: String(conversationId || ""), typingUntil: conversationId ? Timestamp.fromMillis(Date.now() + 7000) : null, lastSeenAt: serverTimestamp(), updatedAt: serverTimestamp() });
+}
 export function subscribePaymentNotifications(uid, onChange, onError) { return onSnapshot(query(paymentNotifications, where("asesorUid", "==", uid)), snapshot => onChange(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), onError); }
 function pendingInvoiceExistsError() { const error = new Error("Ya hay una revisión pendiente para esta cédula. Verifícala antes de agregar otra."); error.code = "invoice-pending-exists"; return error; }
 async function assertNoPendingInvoice(advisorUid, customerId, exceptId = "") {
@@ -457,6 +542,6 @@ export function saveAdjustmentZones(zones) {
     .filter(zone => zone.nombre && Number.isFinite(zone.valor) && zone.valor > 0);
   return setDoc(adjustmentZonesConfig, { zonas: cleanZones, actualizadoEn: serverTimestamp() });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, saveAdvisorRole, deleteAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribeBoxLocationOptions, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, deleteAdvisorRole, saveAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeChatDirectory, subscribeChatConversations, subscribeChatMessages, ensureChatAdvisorProfile, seedChatDirectoryForExistingAdvisors, createChatConversationAndSend, markChatConversationRead, updateChatAdvisorPresence, updateChatTyping, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribeBoxLocationOptions, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 
