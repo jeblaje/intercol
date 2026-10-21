@@ -29,8 +29,6 @@ function isUnread(conversation) {
   return (conversation.lastMessageAtMs || 0) > readAt;
 }
 function unreadCount(conversation) {
-  const contact = getAdvisor(conversation.participantUids?.find(uid => uid !== currentUser?.uid));
-  if (!contact) return 0;
   return isUnread(conversation) ? 1 : 0;
 }
 function formatLastMessage(conversation) {
@@ -75,10 +73,11 @@ function renderContactList() {
   }
   list.innerHTML = items.map(({ person, conversation }) => {
     const isActive = activeContact?.uid === person.uid;
-    const badge = conversation && unreadCount(conversation) ? `<span class="unread-badge">1</span>` : "";
+    const hasUnread = Boolean(conversation && unreadCount(conversation));
+    const badge = hasUnread ? `<span class="unread-badge" aria-label="Mensaje nuevo sin leer">Nuevo</span>` : "";
     const preview = conversation ? formatLastMessage(conversation) : (online(person) ? "En línea" : "Asesor registrado");
     const time = conversation?.lastMessageAtMs ? `<time>${timeFormat.format(new Date(conversation.lastMessageAtMs))}</time>` : "";
-    return `<button class="contact-row ${isActive ? "active" : ""}" type="button" data-advisor-uid="${escapeHtml(person.uid)}"><span class="avatar ${colorClass(person.uid)} ${online(person) ? "online" : ""}">${escapeHtml(initials(person.nombre))}</span><span class="contact-copy"><strong>${escapeHtml(person.nombre || "Asesor")}</strong><span>${escapeHtml(preview)}</span></span><span class="contact-meta">${time}${badge}</span></button>`;
+    return `<button class="contact-row ${isActive ? "active" : ""} ${hasUnread ? "has-unread" : ""}" type="button" data-advisor-uid="${escapeHtml(person.uid)}"${hasUnread ? ` aria-label="${escapeHtml(person.nombre || "Asesor")}, mensaje nuevo sin leer"` : ""}><span class="avatar ${colorClass(person.uid)} ${online(person) ? "online" : ""}">${escapeHtml(initials(person.nombre))}</span><span class="contact-copy"><strong>${escapeHtml(person.nombre || "Asesor")}</strong><span>${escapeHtml(preview)}</span></span><span class="contact-meta">${time}${badge}</span></button>`;
   }).join("");
   list.querySelectorAll("[data-advisor-uid]").forEach(button => button.addEventListener("click", () => selectContact(getAdvisor(button.dataset.advisorUid))));
 }
