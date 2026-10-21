@@ -163,13 +163,13 @@ export async function setPaymentNotificationReviewed(id, reviewed, advisorName) 
 }
 export function deletePaymentNotification(id) { return deleteDoc(doc(firestore, "notificacionesPago", id)); }
 function normalizeTemporaryMessage(snapshot) {
-  const fields = snapshot.data(); const rawDate = fields.date ?? fields.expiresAt; const expiry = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate); const text = fields.data ?? fields.text;
+  const fields = snapshot.data(); const rawDate = fields.date ?? fields.expiresAt; const expiry = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate); const rawCreatedAt = fields.createdAt; const createdAt = rawCreatedAt?.toDate ? rawCreatedAt.toDate() : rawCreatedAt ? new Date(rawCreatedAt) : null; const text = fields.data ?? fields.text;
   if (typeof text !== "string" || !Number.isFinite(expiry.getTime())) return null;
-  return { id: snapshot.id, text, advisor: String(fields.asesor ?? fields.advisor ?? ""), expiresAt: expiry.toISOString() };
+  return { id: snapshot.id, title: String(fields.title ?? ""), text, advisor: String(fields.asesor ?? fields.advisor ?? ""), expiresAt: expiry.toISOString(), createdAt: createdAt && Number.isFinite(createdAt.getTime()) ? createdAt.toISOString() : "" };
 }
 export function subscribeTemporaryMessages(onChange, onError) { return onSnapshot(temporaryMessages, snapshot => onChange(snapshot.docs.map(normalizeTemporaryMessage).filter(Boolean)), onError); }
-export function createTemporaryMessage({ text, advisor, expiresAt }) { return addDoc(temporaryMessages, { data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), createdAt: serverTimestamp() }); }
-export function updateTemporaryMessage(id, { text, advisor, expiresAt }) { return updateDoc(doc(firestore, "smsTemp", id), { data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), updatedAt: serverTimestamp() }); }
+export function createTemporaryMessage({ title, text, advisor, expiresAt }) { return addDoc(temporaryMessages, { title: String(title || ""), data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), createdAt: serverTimestamp() }); }
+export function updateTemporaryMessage(id, { title, text, advisor, expiresAt }) { return updateDoc(doc(firestore, "smsTemp", id), { title: String(title || ""), data: text, asesor: advisor, date: Timestamp.fromDate(new Date(expiresAt)), updatedAt: serverTimestamp() }); }
 export function deleteTemporaryMessage(id) { return deleteDoc(doc(firestore, "smsTemp", id)); }
 export async function createVerifiedBox(data) {
   // La ficha se arma dentro de un iframe. Reconstruye el arreglo y sus objetos

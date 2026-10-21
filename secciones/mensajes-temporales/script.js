@@ -3,7 +3,7 @@ import {
   deleteTemporaryMessage,
   subscribeTemporaryMessages,
   updateTemporaryMessage
-} from "../../admin/firebase-config.js";
+} from "../../admin/firebase-config.js?v=20261021-titulo-mensaje";
 
 const form = document.querySelector("#messageForm");
 const list = document.querySelector("#messageList");
@@ -17,6 +17,7 @@ let loadError = "";
 function formatDate(value) {
   return new Date(value).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" });
 }
+function createdAtMillis(message) { return Date.parse(message.createdAt) || Date.parse(message.expiresAt) || 0; }
 function toLocalInput(date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
@@ -30,6 +31,7 @@ function resetForm() {
 }
 function beginEdit(message) {
   form.elements.id.value = message.id;
+  form.elements.title.value = message.title || "";
   form.elements.text.value = message.text;
   form.elements.advisor.value = message.advisor || "";
   form.elements.expiresAt.value = toLocalInput(new Date(message.expiresAt));
@@ -46,7 +48,7 @@ function describeError(error, fallback) {
 }
 function render() {
   const active = messages.filter(message => Date.parse(message.expiresAt) > Date.now())
-    .sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt));
+    .sort((a, b) => createdAtMillis(b) - createdAtMillis(a));
   document.querySelector("#messageCount").textContent = `${active.length} mensaje${active.length === 1 ? " vigente" : "s vigentes"}`;
   list.replaceChildren();
   if (!active.length) {
@@ -58,6 +60,12 @@ function render() {
     active.forEach(message => {
       const card = document.createElement("article");
       card.className = "message-card";
+      if (message.title?.trim()) {
+        const title = document.createElement("h3");
+        title.className = "message-title";
+        title.textContent = message.title.trim();
+        card.appendChild(title);
+      }
       const text = document.createElement("p");
       text.textContent = message.text;
       if (message.advisor?.trim()) {
@@ -100,6 +108,7 @@ function render() {
 
 form.addEventListener("submit", async event => {
   event.preventDefault();
+  const title = form.elements.title.value.trim();
   const text = form.elements.text.value.trim();
   const advisor = form.elements.advisor.value.trim();
   const expiry = new Date(form.elements.expiresAt.value);
@@ -111,7 +120,7 @@ form.addEventListener("submit", async event => {
   saveButton.disabled = true;
   try {
     const id = form.elements.id.value;
-    const record = { text, advisor, expiresAt: expiry.toISOString() };
+    const record = { title, text, advisor, expiresAt: expiry.toISOString() };
     if (id) await updateTemporaryMessage(id, record);
     else await createTemporaryMessage(record);
     resetForm();

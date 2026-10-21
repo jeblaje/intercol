@@ -11,7 +11,7 @@ window.INTERCOL_SECTIONS = [
     name: "Mensajes temporales",
     description: "Crea y administra mensajes que aparecen en el dashboard hasta su vencimiento.",
     icon: "◷",
-    path: "secciones/mensajes-temporales/index.html"
+    path: "secciones/mensajes-temporales/index.html?v=20261021-titulo-mensaje"
   },
   {
     id: "notificaciones-pago",

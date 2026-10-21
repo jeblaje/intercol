@@ -398,11 +398,19 @@ function renderDashboardMessages() {
     list.appendChild(empty);
     return;
   }
-  active.sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt)).forEach(message => {
+  active.sort((a, b) => (Date.parse(b.createdAt) || Date.parse(b.expiresAt) || 0) - (Date.parse(a.createdAt) || Date.parse(a.expiresAt) || 0)).forEach(message => {
     const card = document.createElement("article");
     card.className = "dashboard-message";
     const messageHeader = document.createElement("div");
     messageHeader.className = "dashboard-message-header";
+    const content = document.createElement("div");
+    content.className = "dashboard-message-content";
+    if (message.title?.trim()) {
+      const title = document.createElement("h4");
+      title.className = "dashboard-message-title";
+      title.textContent = message.title.trim();
+      content.appendChild(title);
+    }
     const body = document.createElement("p");
     body.textContent = message.text;
     const copy = document.createElement("button");
@@ -423,7 +431,8 @@ function renderDashboardMessages() {
     const expiry = document.createElement("time");
     expiry.dateTime = message.expiresAt;
     expiry.textContent = `Vence: ${new Date(message.expiresAt).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" })}`;
-    messageHeader.append(body, copy);
+    content.appendChild(body);
+    messageHeader.append(content, copy);
     card.append(messageHeader);
     if (message.advisor?.trim()) {
       const advisor = document.createElement("div");
