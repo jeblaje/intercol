@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chat de asesores · INTERCOL</title>
-  <link rel="stylesheet" href="style.css?v=20261021-chat-scroll-v1">
+  <link rel="stylesheet" href="style.css?v=20261023-chat-emoji-v1">
 </head>
 <body>
   <main class="chat-app">
@@ -20,11 +20,11 @@
       <header class="conversation-topbar" id="conversationTopbar"><div class="active-contact"><div class="avatar" id="activeAvatar">◉</div><div><strong id="activeName">Chat de asesores</strong><span id="activePresence">Selecciona un asesor para conversar</span></div></div><button class="info-button" id="conversationInfo" type="button" aria-label="Información de la conversación" title="Información">ⓘ</button></header>
       <div class="message-area" id="messageArea"><div class="welcome-state"><div class="welcome-icon">◉</div><h2>Habla con tu equipo</h2><p>Elige un chat o busca un asesor registrado.</p></div></div>
       <div class="typing-status" id="typingStatus" aria-live="polite" hidden><span class="typing-dots"><i></i><i></i><i></i></span><span id="typingText">Está escribiendo</span></div>
-      <form class="message-composer" id="messageForm"><button class="composer-add" type="button" id="focusSearch" title="Buscar asesor" aria-label="Buscar asesor">＋</button><div class="composer-wrap"><textarea id="messageInput" rows="1" maxlength="4000" placeholder="Selecciona un asesor para enviarle un mensaje" disabled></textarea><small>Enter para enviar · Shift + Enter para nueva línea</small></div><button class="send-button" type="submit" disabled aria-label="Enviar mensaje">➤</button></form>
+      <form class="message-composer" id="messageForm"><button class="composer-add" type="button" id="focusSearch" title="Buscar asesor" aria-label="Buscar asesor">＋</button><div class="composer-wrap"><textarea id="messageInput" rows="1" maxlength="4000" placeholder="Selecciona un asesor para enviarle un mensaje" disabled></textarea><small>Enter para enviar · Shift + Enter para nueva línea</small></div><div class="emoji-picker-wrap"><button class="emoji-trigger" id="emojiTrigger" type="button" aria-label="Insertar emoji" title="Insertar emoji" aria-expanded="false" aria-controls="emojiPicker">☺</button><div class="emoji-picker" id="emojiPicker" role="group" aria-label="Emojis" hidden></div></div><button class="send-button" type="submit" disabled aria-label="Enviar mensaje">➤</button></form>
       <div class="chat-notice" id="chatNotice" role="status" aria-live="polite"></div>
     </section>
     <aside class="profile-sidebar" id="profileSidebar"><button class="close-profile" id="closeProfile" type="button" aria-label="Cerrar información">×</button><div class="profile-card"><div class="avatar profile-avatar" id="profileAvatar">◉</div><strong id="profileName">Perfil del asesor</strong><span id="profileRole">INTERCOL</span></div><div class="profile-details"><h3>Información</h3><div><span>Estado</span><strong id="profileStatus">—</strong></div><div><span>Usuario</span><strong id="profileUsername">—</strong></div></div><a class="workspace-link" href="../../index.html">← Volver a INTERCOL</a></aside>
   </main>
-  <script type="module" src="script.js?v=20261021-chat-unread-v1"></script>
+  <script type="module" src="script.js?v=20261023-chat-emoji-v2"></script>
 </body>
 </html>

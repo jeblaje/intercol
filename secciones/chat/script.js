@@ -4,6 +4,9 @@ const messagesEl = $("#messageArea");
 const searchInput = $("#advisorSearch");
 const messageInput = $("#messageInput");
 const chatForm = $("#messageForm");
+const emojiTrigger = $("#emojiTrigger");
+const emojiPicker = $("#emojiPicker");
+const chatEmojis = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "🙃", "😉", "😍", "🥰", "😘", "😎", "🤔", "😅", "😭", "😡", "👍", "👎", "👏", "🙌", "🙏", "🤝", "💪", "❤️", "💙", "💚", "🎉", "✅", "🔥", "⭐", "📶"];
 const dayFormat = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric" });
 const timeFormat = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit" });
 let fb = null, currentUser = null, currentProfile = null;
@@ -186,6 +189,20 @@ function onTyping() {
   messageInput.style.height = "auto";
   messageInput.style.height = `${Math.min(messageInput.scrollHeight, 100)}px`;
 }
+function insertEmoji(emoji) {
+  if (messageInput.disabled) return;
+  const start = messageInput.selectionStart ?? messageInput.value.length;
+  const end = messageInput.selectionEnd ?? start;
+  messageInput.value = messageInput.value.slice(0, start) + emoji + messageInput.value.slice(end);
+  const cursor = start + emoji.length;
+  messageInput.focus();
+  messageInput.setSelectionRange(cursor, cursor);
+  onTyping();
+}
+function closeEmojiPicker() {
+  emojiPicker.hidden = true;
+  emojiTrigger.setAttribute("aria-expanded", "false");
+}
 async function sendMessage(event) {
   event.preventDefault();
   const text = messageInput.value.trim();
@@ -275,6 +292,24 @@ async function startChat(user, profile) {
 $("#personalTab").addEventListener("click", () => setActiveTab("personal"));
 $("#advisorsTab").addEventListener("click", () => setActiveTab("advisors"));
 searchInput.addEventListener("input", renderContactList);
+emojiPicker.innerHTML = chatEmojis.map(emoji => `<button class="emoji-option" type="button" aria-label="Insertar ${emoji}" title="${emoji}">${emoji}</button>`).join("");
+emojiTrigger.addEventListener("click", () => {
+  if (messageInput.disabled) return;
+  emojiPicker.hidden = !emojiPicker.hidden;
+  emojiTrigger.setAttribute("aria-expanded", String(!emojiPicker.hidden));
+  if (!emojiPicker.hidden) emojiPicker.querySelector("button")?.focus();
+});
+emojiPicker.addEventListener("click", event => {
+  const button = event.target.closest(".emoji-option");
+  if (!button) return;
+  insertEmoji(button.textContent);
+});
+emojiPicker.addEventListener("keydown", event => {
+  if (event.key === "Escape") { closeEmojiPicker(); emojiTrigger.focus(); }
+});
+document.addEventListener("click", event => {
+  if (!event.target.closest(".emoji-picker-wrap")) closeEmojiPicker();
+});
 $("#newChatButton").addEventListener("click", focusAdvisorSearch);
 $("#focusSearch").addEventListener("click", focusAdvisorSearch);
 $("#conversationInfo").addEventListener("click", () => {
