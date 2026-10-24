@@ -6,7 +6,7 @@ const processNames = { reconexion: "Reconexión", abono: "Abono", "cambio-fecha-
 const processStepTemplates = {
   reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
   "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
-  "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"],
+  "cambio-plan": ["Calcula el valor del cambio de plan y confirma el pago", "Busca la IP correspondiente al plan nuevo", "Prepara y registra la anotación del cambio de plan", "Gestiona el cambio de TV si corresponde", "Actualiza el plan en Wisphub"],
   abono: ["Genera la factura de abono con comisión", "Registra la promesa de pago y espera hasta la fecha acordada", "Confirma si el cliente pagó la factura de abono", "Haz la anotación del abono", "Aplica el descuento a la factura correspondiente"]
 };
 const cancelledReconnectionSteps = [
@@ -24,6 +24,16 @@ const cancelledReconnectionPlans = {
     ["900 MB solo internet", 82800], ["600 MB solo internet", 72800], ["400 MB solo internet", 62800], ["200 MB solo internet", 52800]
   ],
   generales: [
+    ["900 MB + TV", 102800], ["500 MB + TV", 82800], ["300 MB + TV", 72800], ["100 MB + TV", 62800],
+    ["900 MB solo internet", 92800], ["600 MB solo internet", 72800], ["300 MB solo internet", 62800], ["100 MB solo internet", 52800]
+  ]
+};
+const changePlanCatalog = {
+  special: [
+    ["900 MB + TV", 92800], ["500 MB + TV", 72800], ["300 MB + TV", 62800], ["100 MB + TV", 52800],
+    ["900 MB solo internet", 82800], ["600 MB solo internet", 72800], ["400 MB solo internet", 62800], ["200 MB solo internet", 52800]
+  ],
+  general: [
     ["900 MB + TV", 102800], ["500 MB + TV", 82800], ["300 MB + TV", 72800], ["100 MB + TV", 62800],
     ["900 MB solo internet", 92800], ["600 MB solo internet", 72800], ["300 MB solo internet", 62800], ["100 MB solo internet", 52800]
   ]
@@ -50,6 +60,13 @@ const processStepHelp = {
     "Revisa el historial de pagos. Si todavía no pagó, el proceso no se podrá cerrar antes de la fecha límite. Después de revisar si pagó o no, registra la anotación.",
     "Después de confirmar el resultado del pago, registra esta anotación en Wisphub, haya pagado o no.",
     "Si el cliente pagó, abre la factura indicada y aplica el descuento correspondiente."
+  ],
+  "cambio-plan": [
+    "Revisa el plan actual, selecciona el nuevo, confirma el pago y el precio aceptado. El cálculo llega hasta su próxima fecha de pago y excluye los días 31.",
+    "La búsqueda de IP será la siguiente fase del proceso.",
+    "Después de confirmar la IP, prepara la anotación con el flujo que ya usas.",
+    "La instalación o retiro de TV se configura según el cambio de plan.",
+    "Al final se registrará el plan nuevo en Wisphub."
   ]
 };
 const legacyReconnectionSteps = ["Confirmar cliente y validar su cédula", "Verificar estado del servicio y motivo de suspensión", "Realizar la reconexión en la plataforma", "Confirmar con el cliente que el servicio funciona"];
@@ -151,11 +168,13 @@ function getProcessSteps(item) {
   if (item.tipo === "abono" && item.informacion?.resultadoPago === "no-pago") return processStepTemplates.abono.slice(0, 4);
   if (item.tipo === "abono") return [...processStepTemplates.abono];
   if (item.tipo === "reconexion") return [...processStepTemplates.reconexion];
+  if (item.tipo === "cambio-plan" && (!Array.isArray(item.pasos) || item.pasos.length === 4)) return [...processStepTemplates["cambio-plan"]];
   return Array.isArray(item.pasos) && item.pasos.length ? item.pasos : processStepTemplates[item.tipo] || [];
 }
 function getCheckedProcessSteps(item) {
   const saved = new Set(Array.isArray(item.pasosVerificados) ? item.pasosVerificados.map(Number) : []);
   if (isCancelledReconnection(item)) return saved;
+  if (item.tipo === "cambio-plan" && item.estado !== "completado" && Array.isArray(item.pasos) && item.pasos.length === 4) return new Set();
   if (item.tipo !== "reconexion" || !Array.isArray(item.pasos)) return saved;
   const migrated = new Set();
   if (item.pasos.length === 11) {
@@ -468,16 +487,25 @@ function openProcessWizard(processId, message = "", requestedStep = null) {
   const help = isCancelledReconnection(process) ? cancelledReconnectionHelp[helpIndex] : (processStepHelp[process.tipo]?.[activeStep] || "Completa esta tarea antes de continuar con el siguiente paso del proceso.");
   const information = { ...(process.informacion || {}), cedulaCliente: String(client.cedula || ""), clienteNombre: clientName(client), valorMensualCliente: client.valorMensual ?? 0, valorReconexion: client.valorReconexion ?? process.informacion?.valorReconexion ?? "", diaPago: process.informacion?.diaPago ?? client.diaPago ?? (process.informacion?.fechaPago ? Number(String(process.informacion.fechaPago).slice(-2)) : ""), ...getWizardInformationDraft(processId) };
   const fields = !completed && process.tipo === "reconexion" ? renderReconnectionStepFields(process, activeStep, information, client) : !completed ? renderClientProfileProcessFields(process, activeStep, information, client) : "";
+  const phaseLocked = !completed && process.tipo === "cambio-plan" && activeStep > 0;
   dialog.dataset.activeStep = String(activeStep);
   const completionMessage = process.tipo === "reconexion" ? "¡Listo! El cliente está completo." : `¡Listo! El proceso de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")} está completo.`;
   const completionNote = process.tipo === "abono" && information.resultadoPago === "no-pago" ? "El cliente no pagó dentro del plazo; queda pendiente cobrar la reconexión." : information.notificacionFacturaOmitida ? "Ya había una revisión pendiente; no agregué otra a la lista." : `Se guardaron todas las tareas de ${processTypeLabel(process.tipo, process.informacion).toLocaleLowerCase("es")}.`;
-  dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo, process.informacion)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>${escapeHtml(completionMessage)}</h3><p>${escapeHtml(completionNote)}</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
+  dialog.innerHTML = `<section class="process-wizard-card"><header><div><span class="eyebrow">${escapeHtml(processTypeLabel(process.tipo, process.informacion)).toLocaleUpperCase("es")}</span><h2>${escapeHtml(clientName(client))}</h2><p>Cédula ${escapeHtml(client.cedula || "—")}</p></div><button class="dialog-close" type="button" data-close-process-wizard aria-label="Cerrar">×</button></header><div class="wizard-progress"><span>Paso ${completed ? steps.length : activeStep + 1} de ${steps.length}</span><div>${steps.map((_, index) => `<i class="${checked.has(index) ? "is-done" : ""} ${index === activeStep && !completed ? "is-current" : ""}"></i>`).join("")}</div></div>${completed ? `<section class="wizard-complete"><span aria-hidden="true">✓</span><h3>${escapeHtml(completionMessage)}</h3><p>${escapeHtml(completionNote)}</p></section>` : `<section class="wizard-task"><span class="eyebrow">TAREA ${activeStep + 1}</span><h3>${escapeHtml(task)}</h3><p>${escapeHtml(help)}</p>${fields}</section>`}<p class="wizard-status ${message ? "is-error" : ""}" role="status">${escapeHtml(message)}</p><footer>${completed ? `<button class="primary-button" type="button" data-close-process-wizard>Terminar</button>` : phaseLocked ? `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Volver a la primera fase</button>` : ""}<span class="wizard-phase-pending">La primera fase está lista. Las siguientes se añadirán después de probar el cálculo.</span>` : `${activeStep > 0 ? `<button class="secondary-button wizard-previous" type="button" data-previous-process-step>← Tarea anterior</button>` : ""}<button class="primary-button" type="button" data-complete-process-step="${escapeHtml(process.id)}" data-step-index="${activeStep}">Marcar completada y ver siguiente tarea</button>`}</footer></section>`;
   dialog.querySelectorAll("[data-close-process-wizard]").forEach(button => button.addEventListener("click", () => dialog.close()));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => setWizardInformationDraft(processId, readWizardInformation(dialog))));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("input", () => updateReconnectionSummaries(dialog)));
   dialog.querySelectorAll("[data-process-info]").forEach(field => field.addEventListener("change", () => { setWizardInformationDraft(processId, readWizardInformation(dialog)); updateReconnectionSummaries(dialog); }));
+  dialog.querySelectorAll("[data-change-plan-option]").forEach(option => option.addEventListener("click", () => {
+    const field = dialog.querySelector('[name="planNuevo"]');
+    field.value = option.dataset.changePlanOption;
+    dialog.querySelectorAll("[data-change-plan-option]").forEach(item => item.classList.toggle("is-selected", item === option));
+    setWizardInformationDraft(processId, readWizardInformation(dialog));
+    updateChangePlanSummary(dialog);
+  }));
   dialog.querySelector("[data-copy-annotation]")?.addEventListener("click", async () => { const annotation = dialog.querySelector(".wizard-annotation")?.value || ""; try { await navigator.clipboard.writeText(annotation); dialog.querySelector("[data-copy-annotation]").textContent = "Anotación copiada"; } catch { dialog.querySelector(".wizard-annotation")?.select(); } });
   updateReconnectionSummaries(dialog);
+  updateChangePlanSummary(dialog);
   dialog.querySelector("[data-previous-process-step]")?.addEventListener("click", () => goToPreviousProcessStep(processId, activeStep));
   dialog.querySelector("[name=numeroContacto]")?.addEventListener("change", event => saveWizardContactNumber(processId, event.currentTarget.value).catch(() => {}));
   dialog.querySelector("[data-complete-process-step]")?.addEventListener("click", completeWizardTask);
@@ -589,6 +617,19 @@ function updateReconnectionSummaries(dialog) {
   const day = dialog.querySelector('[name="diaPago"]')?.value || dialog.querySelector('[name="diaPagoReconectar"]')?.value;
   const summary = dialog.querySelector("[data-payment-date-summary]");
   if (summary) summary.textContent = day ? `Pago: día ${day} de cada mes. Corte: día ${addDaysOnThirtyDayCycle(day)} de cada mes (dos días después, sin día 31).` : "Escribe únicamente el día del mes, entre 1 y 30.";
+  updateChangePlanSummary(dialog);
+}
+function updateChangePlanSummary(dialog) {
+  const summary = dialog.querySelector("[data-change-plan-summary]");
+  if (!summary) return;
+  const process = processes.find(item => item.id === dialog.dataset.processId);
+  const client = clients.find(item => item.id === process?.clienteId) || { valorMensual: process?.informacion?.valorMensualAnterior, plan: process?.informacion?.planAnterior };
+  const info = { ...(process?.informacion || {}), ...readWizardInformation(dialog) };
+  const result = changePlanChargeSummary(info, client);
+  if (!result.choice) { summary.textContent = "Selecciona el plan nuevo para ver el cálculo."; return; }
+  if (!result.currentPrice || !Number.isInteger(result.paymentDay) || result.paymentDay < 1 || result.paymentDay > 30 || !result.dueDate) { summary.textContent = "Completa el valor del plan actual y el día de pago (1 al 30) para calcular."; return; }
+  const increase = result.difference ? `Diferencia mensual: ${formatCurrency(result.difference)}.` : "El plan cuesta lo mismo o menos; no se cobra diferencia por días excedentes.";
+  summary.innerHTML = `${increase}<br>Días cobrables desde hoy hasta el ${escapeHtml(formatAbonoDate(result.dueDate))}: <strong>${result.days}</strong> (no se cuenta ningún día 31).<br>Valor exacto proporcional: <strong>${escapeHtml(formatCurrency(result.exactAmount))}</strong>.<br>Valor redondeado para cobrar: <strong>${escapeHtml(formatCurrency(result.roundedAmount))}</strong>.`;
 }
 function addDaysOnThirtyDayCycle(day, offset = 2) { return ((Number(day) - 1 + offset) % 30) + 1; }
 function bogotaDateParts(date = new Date()) {
@@ -625,11 +666,52 @@ function renderAbonoStepFields(process, step, info, client) {
   if (step === 4) return `<p class="wizard-calculated-amount">Factura que recibirá el descuento: <strong>#${escapeHtml(info.numeroFacturaAbonar || "—")}</strong></p><a class="wizard-external-link" href="https://wisphub.net/facturas/editar/cibercitywisp/${encodeURIComponent(info.numeroFacturaAbonar || "")}/" target="_blank" rel="noopener noreferrer">Abrir factura para aplicar el descuento ↗</a><label class="wizard-check-confirm"><input data-process-info name="abonoAplicado" type="checkbox" value="true" ${info.abonoAplicado === "true" ? "checked" : ""} required> Apliqué el descuento a la factura</label>`;
   return "";
 }
+function getChangePlanChoice(value) {
+  const match = /^(special|general)-(\d+)$/.exec(String(value || ""));
+  if (!match) return null;
+  const plan = changePlanCatalog[match[1]]?.[Number(match[2])];
+  return plan ? { group: match[1], name: plan[0], price: plan[1] } : null;
+}
+function countChargeableChangePlanDays(startDate, endDate) {
+  if (!startDate || !endDate || endDate < startDate) return 0;
+  const current = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  let days = 0;
+  while (current <= end) {
+    if (current.getUTCDate() !== 31) days += 1;
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return days;
+}
+function changePlanChargeSummary(info, client) {
+  const currentPrice = Number(info.valorPlanActual ?? client.valorMensual) || 0;
+  const choice = getChangePlanChoice(info.planNuevo);
+  const paymentDay = Number(info.diaPagoCliente || client.diaPago);
+  const today = bogotaDateParts();
+  const startDate = `${today.year}-${today.month}-${today.day}`;
+  const dueDate = Number.isInteger(paymentDay) && paymentDay >= 1 && paymentDay <= 30 ? nextAbonoDeadline(paymentDay) : "";
+  const days = dueDate ? countChargeableChangePlanDays(startDate, dueDate) : 0;
+  const difference = choice ? Math.max(0, choice.price - currentPrice) : 0;
+  const exactAmount = Math.round((difference / 30) * days);
+  const roundedAmount = Math.round(exactAmount / 100) * 100;
+  return { currentPrice, choice, paymentDay, dueDate, days, difference, exactAmount, roundedAmount };
+}
+function renderChangePlanCalculationStep(process, info, client) {
+  const customerId = encodeURIComponent(client.cedula || process.clienteCedula || "");
+  const customerUrl = `https://wisphub.net/clientes/ver/${customerId}@cibercitywisp/`;
+  const selected = info.planNuevo || "";
+  const planGroups = Object.entries(changePlanCatalog).map(([group, plans]) => `<section class="change-plan-group"><h4>${group === "special" ? "Planes especiales" : "Planes generales"}</h4><div class="change-plan-options">${plans.map(([name, price], index) => {
+    const value = `${group}-${index}`;
+    return `<button type="button" class="change-plan-option ${selected === value ? "is-selected" : ""}" data-change-plan-option="${value}"><span>${group === "special" ? "Especial" : "General"}</span><strong>${escapeHtml(name)}</strong><small>${escapeHtml(formatCurrency(price))} mensual</small></button>`;
+  }).join("")}</div></section>`).join("");
+  return `<div class="change-plan-links"><a class="wizard-external-link" href="${customerUrl}" target="_blank" rel="noopener noreferrer">Ver ficha del cliente ↗</a><a class="wizard-external-link" href="${customerUrl}#retab3" target="_blank" rel="noopener noreferrer">Historial de pago ↗</a><a class="wizard-external-link" href="${customerUrl}#retab5" target="_blank" rel="noopener noreferrer">Fecha de pago ↗</a></div><div class="change-plan-current"><span>Plan actual</span><strong>${escapeHtml(client.plan || "Sin registrar")}</strong><label class="wizard-contact-field">Valor mensual actual<input data-process-info name="valorPlanActual" type="number" min="0" step="100" value="${escapeHtml(info.valorPlanActual ?? client.valorMensual ?? "")}" placeholder="Valor mensual en pesos" required></label></div><label class="wizard-contact-field">Plan que va a adquirir</label>${planGroups}<input type="hidden" data-process-info name="planNuevo" value="${escapeHtml(selected)}"><div class="wizard-form-grid"><label class="wizard-contact-field">Fecha de pago actual (día 1 al 30)<input data-process-info name="diaPagoCliente" type="number" min="1" max="30" step="1" value="${escapeHtml(info.diaPagoCliente ?? client.diaPago ?? "")}" placeholder="Día de pago" required></label><label class="wizard-contact-field">¿Cómo confirmó el pago?<select data-process-info name="pagoCambioPlan" required><option value="">Selecciona una opción</option><option value="factura" ${info.pagoCambioPlan === "factura" ? "selected" : ""}>Pagó la factura en Wisphub</option><option value="tecnico" ${info.pagoCambioPlan === "tecnico" ? "selected" : ""}>Pagó al técnico</option></select></label></div><label class="wizard-check-confirm"><input data-process-info name="precioCambioPlanAceptado" type="checkbox" value="true" ${info.precioCambioPlanAceptado === "true" ? "checked" : ""} required> El cliente aceptó el nuevo plan y su precio</label><div class="wizard-calculated-amount change-plan-charge" data-change-plan-summary></div>`;
+}
 function renderClientProfileProcessFields(process, step, info, client) {
   if (process.tipo === "abono") return renderAbonoStepFields(process, step, info, client);
   if (process.tipo === "cambio-plan") {
-    if (step === 0) return `<p class="wizard-calculated-amount">Plan registrado actualmente: <strong>${escapeHtml(client.plan || "Sin registrar")}</strong></p>`;
-    if (step === 1) return `<div class="wizard-form-grid"><label class="wizard-contact-field">Nuevo plan<input data-process-info name="nuevoPlan" value="${escapeHtml(info.nuevoPlan || "")}" placeholder="Escribe el nuevo plan" required></label><label class="wizard-contact-field">Nuevo valor mensual (opcional)<input data-process-info name="nuevoValorMensual" type="number" min="0" step="100" value="${escapeHtml(info.nuevoValorMensual || "")}" placeholder="Valor en pesos"></label></div>`;
+    if (step === 0) return renderChangePlanCalculationStep(process, info, client);
+    if (step === 1) return `<p class="wizard-calculated-amount">La primera fase quedó guardada. La búsqueda de IP será la siguiente fase del proceso.</p>`;
+    return `<p class="wizard-calculated-amount">Esta fase se configurará después de probar y cerrar la primera fase del cambio de plan.</p>`;
   }
   if (process.tipo === "cambio-fecha-pago") {
     if (step === 0) return `<p class="wizard-calculated-amount">Día de pago registrado actualmente: <strong>${escapeHtml(client.diaPago ? `${client.diaPago} de cada mes` : "Sin registrar")}</strong></p>`;
@@ -704,6 +786,31 @@ async function completeWizardTask(event) {
   if (missingField) {
     const status = $(".wizard-status"); if (status) { status.textContent = "Completa los datos de esta tarea antes de continuar."; status.classList.add("is-error"); }
     missingField.focus(); return;
+  }
+  if (process.tipo === "cambio-plan" && index === 0) {
+    const choice = getChangePlanChoice(informacion.planNuevo);
+    const currentPrice = Number(informacion.valorPlanActual);
+    const paymentDay = Number(informacion.diaPagoCliente);
+    if (!choice) { const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona el plan que el cliente va a adquirir."; status.classList.add("is-error"); } return; }
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra el valor mensual actual del cliente para calcular la diferencia."; status.classList.add("is-error"); } dialog.querySelector('[name="valorPlanActual"]')?.focus(); return; }
+    if (!Number.isInteger(paymentDay) || paymentDay < 1 || paymentDay > 30) { const status = $(".wizard-status"); if (status) { status.textContent = "Registra la fecha de pago del cliente entre los días 1 y 30."; status.classList.add("is-error"); } dialog.querySelector('[name="diaPagoCliente"]')?.focus(); return; }
+    if (!["factura", "tecnico"].includes(informacion.pagoCambioPlan)) { const status = $(".wizard-status"); if (status) { status.textContent = "Confirma si pagó la factura en Wisphub o si pagó al técnico."; status.classList.add("is-error"); } return; }
+    if (informacion.precioCambioPlanAceptado !== "true") { const status = $(".wizard-status"); if (status) { status.textContent = "Confirma que el cliente aceptó el nuevo plan y su precio."; status.classList.add("is-error"); } return; }
+    const calculation = changePlanChargeSummary({ ...informacion, valorPlanActual: currentPrice, diaPagoCliente: paymentDay }, clients.find(item => item.id === process.clienteId) || {});
+    if (!calculation.dueDate || calculation.days <= 0) { const status = $(".wizard-status"); if (status) { status.textContent = "No se pudo calcular la fecha de pago siguiente. Verifica el día de pago."; status.classList.add("is-error"); } return; }
+    Object.assign(informacion, {
+      planAnterior: String(clients.find(item => item.id === process.clienteId)?.plan || process.informacion?.planAnterior || ""),
+      valorMensualAnterior: currentPrice,
+      planNuevoNombre: choice.name,
+      valorMensualNuevo: choice.price,
+      diferenciaMensualPlan: calculation.difference,
+      diaPagoCliente: paymentDay,
+      fechaLimiteProporcionalPlan: calculation.dueDate,
+      diasProporcionalesPlan: calculation.days,
+      valorExactoCambioPlan: calculation.exactAmount,
+      valorRedondeadoCambioPlan: calculation.roundedAmount,
+      faseCalculoCambioPlanCompletada: true
+    });
   }
   if (process.tipo === "reconexion" && !cancelledReconnect && index === 3 && !fields.some(field => ["pagaMes", "pagaReajuste"].includes(field.name) && field.checked)) {
     const status = $(".wizard-status"); if (status) { status.textContent = "Selecciona si el cliente paga Mes, Reajuste o ambos."; status.classList.add("is-error"); }

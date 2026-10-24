@@ -459,11 +459,11 @@ export function createClientProcess({ client, type, user, reconexionClienteCance
     reconexion: ["Actualiza cuánto se le cobra a este cliente por la reconexión", "¿Generaste o ajustaste la factura?", "¿Cambiaste la fecha de pago?", "¿Hiciste la anotación?"],
     abono: ["Genera la factura de abono con comisión", "Registra la promesa de pago y espera hasta la fecha acordada", "Confirma si el cliente pagó la factura de abono", "Haz la anotación del abono", "Aplica el descuento a la factura correspondiente"],
     "cambio-fecha-pago": ["Confirmar cliente y fecha de pago actual", "Acordar la nueva fecha de pago", "Actualizar la fecha en la plataforma", "Confirmar el cambio con el cliente"],
-    "cambio-plan": ["Confirmar cliente y plan actual", "Acordar el nuevo plan", "Actualizar el plan en la plataforma", "Confirmar el cambio con el cliente"]
+    "cambio-plan": ["Calcula el valor del cambio de plan y confirma el pago", "Busca la IP correspondiente al plan nuevo", "Prepara y registra la anotación del cambio de plan", "Gestiona el cambio de TV si corresponde", "Actualiza el plan en Wisphub"]
   };
   const initialInformation = {
     ...(type === "reconexion" ? { reconexionClienteCancelado: reconexionClienteCancelado === true } : {}),
-    ...(type === "cambio-plan" ? { planAnterior: String(client.plan || ""), valorMensualAnterior: client.valorMensual ?? null } : {}),
+    ...(type === "cambio-plan" ? { planAnterior: String(client.plan || ""), valorMensualAnterior: client.valorMensual ?? null, diaPagoCliente: client.diaPago ?? null } : {}),
     ...(type === "cambio-fecha-pago" || type === "reconexion" ? { diaPagoAnterior: client.diaPago ?? null, fechaPagoAnterior: String(client.fechaPago || "") } : {})
   };
   return addDoc(clientProcesses, { clienteId: client.id, clienteNombre: String(client.nombre || ""), clienteCedula: String(client.cedula || ""), tipo: String(type || ""), estado: "en_curso", informacion: initialInformation, pasos: stepsByType[type] || [], pasosVerificados: [], iniciadoPorUid: user?.uid || "", iniciadoPorNombre: String(user?.nombre || ""), iniciadoEn: Timestamp.now(), actualizadoEn: serverTimestamp() });
