@@ -16,6 +16,24 @@ let typingStopTimer = 0, presenceHeartbeat = 0, noticeTimer = 0;
 let lastTypingWrite = 0, destroyed = false, messageSubscriptionId = "";
 
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]); }
+function linkifyMessage(value) {
+  const text = String(value ?? "");
+  const pattern = /(?:https?:\/\/[^\s<>]+|www\.[^\s<>]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?:\/[^\s<>]*)?)/gi;
+  let html = "", lastIndex = 0, match;
+  while ((match = pattern.exec(text))) {
+    let rawUrl = match[0], trailing = "";
+    while (/[.,!?;:)}\]]$/.test(rawUrl)) { trailing = rawUrl.slice(-1) + trailing; rawUrl = rawUrl.slice(0, -1); }
+    if (!rawUrl) continue;
+    let parsed;
+    try { parsed = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`); }
+    catch { continue; }
+    if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname.includes(".")) continue;
+    html += escapeHtml(text.slice(lastIndex, match.index));
+    html += `<a class="message-link" href="${escapeHtml(parsed.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(rawUrl)}</a>${escapeHtml(trailing)}`;
+    lastIndex = match.index + match[0].length;
+  }
+  return html + escapeHtml(text.slice(lastIndex));
+}
 function initials(name) { return String(name || "?").trim().split(/\s+/).slice(0, 2).map(word => word[0] || "").join("").toUpperCase(); }
 function colorClass(uid = "") { let sum = 0; for (const char of uid) sum = (sum * 31 + char.charCodeAt(0)) | 0; return `color-${Math.abs(sum) % 5}`; }
 function online(advisor) { const seen = advisor?.lastSeenAt?.toDate ? advisor.lastSeenAt.toDate().getTime() : 0; return Boolean(advisor?.online && Date.now() - seen < 90000); }
@@ -157,7 +175,7 @@ function renderMessages() {
     if (lastDate !== dateKey) { lastDate = dateKey; day = `<div class="message-day"><span>${dayFormat.format(timestamp)}</span></div>`; }
     const sender = mine ? currentProfile?.asesor || currentProfile?.usuario || "Tú" : activeContact.nombre;
     const status = mine ? `<span class="read-status">${message.readAtMs ? "✓✓ Visto" : "✓ Enviado"}</span>` : "";
-    return `${day}<article class="message-row ${mine ? "mine" : ""}"><span class="avatar ${colorClass(message.senderUid)}">${escapeHtml(initials(sender))}</span><div class="message-content">${mine ? "" : `<div class="message-sender">${escapeHtml(sender)}</div>`}<div class="message-bubble">${escapeHtml(message.text)}</div><div class="message-footer"><time>${timeFormat.format(timestamp)}</time>${status}</div></div></article>`;
+    return `${day}<article class="message-row ${mine ? "mine" : ""}"><span class="avatar ${colorClass(message.senderUid)}">${escapeHtml(initials(sender))}</span><div class="message-content">${mine ? "" : `<div class="message-sender">${escapeHtml(sender)}</div>`}<div class="message-bubble">${linkifyMessage(message.text)}</div><div class="message-footer"><time>${timeFormat.format(timestamp)}</time>${status}</div></div></article>`;
   }).join("");
   if (wasNearBottom || oldScroll === 0) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
