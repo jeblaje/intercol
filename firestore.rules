@@ -5,6 +5,7 @@ service cloud.firestore {
     function isSystemAdmin() {
       return signedIn() && (
         request.auth.uid == 'INJQ1NtkRwRbxfLN2XCwF22flyu2'
+        || request.auth.token.email == 'jeblaje@gmail.com'
         || request.auth.token.email == 'jeblaje@intercol-784d9.firebaseapp.com'
       );
     }

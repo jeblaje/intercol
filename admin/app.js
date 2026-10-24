@@ -1,7 +1,7 @@
-const ADMIN_EMAIL = "jeblaje@intercol-784d9.firebaseapp.com";
+const ADMIN_EMAILS = ["jeblaje@gmail.com", "jeblaje@intercol-784d9.firebaseapp.com"];
 const ADMIN_UID = "INJQ1NtkRwRbxfLN2XCwF22flyu2";
-const views = { dashboard: "Dashboard", advisors: "Asesores", sections: "Secciones", permissions: "Roles y permisos" };
-const state = { firebase: null, user: null, profile: null, advisors: [], roles: [], view: "dashboard", selectedAdvisor: "", selectedRole: "asesor", roleDraft: false, roleEditorOpen: false, expandedRoleId: "", busy: false, isSystemAdmin: false, roleAdminPermissions: {}, adminPanelPermissions: {} };
+const views = { dashboard: "Dashboard", advisors: "Asesores", sections: "Secciones", permissions: "Roles y permisos", guide: "Guía y configuración" };
+const state = { firebase: null, user: null, profile: null, advisors: [], roles: [], view: "dashboard", selectedAdvisor: "", selectedRole: "asesor", roleDraft: false, roleEditorOpen: false, expandedRoleId: "", busy: false, accountManagementAvailable: false, isSystemAdmin: false, roleAdminPermissions: {}, adminPanelPermissions: {} };
 const $ = selector => document.querySelector(selector);
 const host = $("#adminView");
 const ADMIN_THEME_KEY = "intercol_theme_v2";
@@ -43,6 +43,7 @@ function permissionsForRole(role) {
 function canManageRoles(action) { return state.isSystemAdmin || state.roleAdminPermissions[action] === true; }
 function canAccessAdminView(view) {
   if (state.isSystemAdmin) return true;
+  if (view === "guide") return false;
   const permission = adminPanelSections.find(item => item.view === view);
   return Boolean(state.adminPanelPermissions.acceder && permission && state.adminPanelPermissions[permission.key]);
 }
@@ -81,6 +82,8 @@ function updateNav() {
   });
   const managementLabel = document.querySelector(".management-label");
   if (managementLabel) managementLabel.hidden = !["advisors", "sections", "permissions"].some(canAccessAdminView);
+  const guideLabel = document.querySelector(".guide-label");
+  if (guideLabel) guideLabel.hidden = !canAccessAdminView("guide");
   $("#adminPageTitle").textContent = views[state.view];
 }
 function dashboardView() {
@@ -94,8 +97,11 @@ function dashboardView() {
 }
 function advisorsView() {
   const canAssignRoles = state.isSystemAdmin || state.roleAdminPermissions.editar === true;
-  const rows = state.advisors.map(advisor => `<tr><td><strong>${escapeHtml(advisor.asesor || "Sin nombre")}</strong><small>${escapeHtml(advisor.usuario || "")}</small></td><td><code>${escapeHtml(advisor.id)}</code></td><td>${canAssignRoles ? `<select class="role-assignment" data-advisor-role="${escapeHtml(advisor.id)}" aria-label="Rol de ${escapeHtml(advisor.asesor || advisor.usuario || "asesor")}">${state.roles.map(role => `<option value="${escapeHtml(role.id)}" ${(advisor.rol || "asesor") === role.id ? "selected" : ""}>${escapeHtml(role.nombre || role.id)}</option>`).join("")}</select>` : escapeHtml(state.roles.find(role => role.id === (advisor.rol || "asesor"))?.nombre || advisor.rol || "Asesor")}</td><td>${canAssignRoles ? `<button class="table-button" type="button" data-save-advisor-role="${escapeHtml(advisor.id)}">Guardar rol</button>` : "—"}</td></tr>`).join("");
-  host.innerHTML = `<section class="view-heading"><div><span class="eyebrow">CUENTAS DE FIREBASE</span><h2>Asesores</h2><p>Asigna un rol a cada asesor. Las cuentas nuevas reciben el rol Asesor.</p></div><button type="button" class="secondary-button" id="refreshAdvisors">Actualizar</button></section><section class="data-panel"><div class="panel-toolbar"><strong>${state.advisors.length} asesor${state.advisors.length === 1 ? "" : "es"}</strong><input id="advisorSearch" type="search" placeholder="Buscar asesor o usuario"></div><div class="table-wrap"><table><thead><tr><th>Asesor</th><th>UID</th><th>Rol asignado</th><th></th></tr></thead><tbody id="advisorRows">${rows || `<tr><td colspan="4"><div class="table-empty">No hay perfiles para mostrar.</div></td></tr>`}</tbody></table></div><p id="advisorRoleStatus" class="inline-status" role="status"></p></section>`;
+  const rows = state.advisors.map(advisor => {
+    const email = advisor.authEmail || advisor.email || advisor.correoRecuperacion || "Sin correo registrado";
+    return `<tr><td><strong>${escapeHtml(advisor.asesor || "Sin nombre")}</strong><small>${escapeHtml(advisor.usuario || "")}</small></td><td>${escapeHtml(email)}${advisor.authEmailVerified === false ? "<small>Sin verificar</small>" : ""}</td><td><code>${escapeHtml(advisor.id)}</code></td><td>${canAssignRoles ? `<select class="role-assignment" data-advisor-role="${escapeHtml(advisor.id)}" aria-label="Rol de ${escapeHtml(advisor.asesor || advisor.usuario || "asesor")}">${state.roles.map(role => `<option value="${escapeHtml(role.id)}" ${(advisor.rol || "asesor") === role.id ? "selected" : ""}>${escapeHtml(role.nombre || role.id)}</option>`).join("")}</select>` : escapeHtml(state.roles.find(role => role.id === (advisor.rol || "asesor"))?.nombre || advisor.rol || "Asesor")}</td><td>${canAssignRoles ? `<button class="table-button" type="button" data-save-advisor-role="${escapeHtml(advisor.id)}">Guardar rol</button>` : "—"}${state.isSystemAdmin ? ` <button class="table-button" type="button" data-edit-advisor-access="${escapeHtml(advisor.id)}" title="Cambiar correo o contraseña">Cambiar acceso</button>` : ""}</td></tr>`;
+  }).join("");
+  host.innerHTML = `<section class="view-heading"><div><span class="eyebrow">CUENTAS DE FIREBASE</span><h2>Asesores</h2><p>Consulta el correo registrado, asigna roles y actualiza el acceso de las cuentas.</p></div><button type="button" class="secondary-button" id="refreshAdvisors">Actualizar</button></section><section class="data-panel"><div class="panel-toolbar"><strong>${state.advisors.length} asesor${state.advisors.length === 1 ? "" : "es"}</strong><input id="advisorSearch" type="search" placeholder="Buscar asesor, usuario o correo"></div><div class="table-wrap"><table><thead><tr><th>Asesor</th><th>Correo registrado</th><th>UID</th><th>Rol asignado</th><th>Acciones</th></tr></thead><tbody id="advisorRows">${rows || `<tr><td colspan="5"><div class="table-empty">No hay perfiles para mostrar.</div></td></tr>`}</tbody></table></div><p id="advisorRoleStatus" class="inline-status" role="status"></p>${state.isSystemAdmin && !state.accountManagementAvailable ? `<p class="account-function-note">Para cambiar accesos sin pagar el despliegue de funciones, inicia el servicio local con <code>npm run admin-local</code> desde <code>functions/</code>. Requiere una clave privada de Firebase guardada fuera del proyecto; consulta <code>functions/README.md</code>.</p>` : ""}</section><dialog class="account-access-dialog" id="accountAccessDialog"><form id="accountAccessForm"><div class="account-dialog-heading"><span class="eyebrow">CAMBIAR CORREO O CONTRASEÑA</span><button class="dialog-close" type="button" data-close-account-dialog aria-label="Cerrar">×</button><h2 id="accountDialogName">Cambiar acceso</h2><p id="accountDialogCurrentEmail"></p></div><label for="accountNewEmail">Nuevo correo electrónico</label><input id="accountNewEmail" name="email" type="email" autocomplete="off" placeholder="Deja vacío para conservarlo"><label for="accountNewPassword">Nueva contraseña</label><input id="accountNewPassword" name="password" type="password" autocomplete="new-password" minlength="6" placeholder="Mínimo 6 caracteres"><small>Deja vacío el dato que no quieras cambiar. Al cambiar el correo, se actualizará el inicio de sesión por nombre de usuario y Firebase lo marcará como pendiente de verificación.</small><p class="inline-status" id="accountAccessStatus" role="status"></p><div class="account-dialog-actions"><button class="secondary-button" type="button" data-close-account-dialog>Cancelar</button><button class="primary-button" type="submit">Guardar cambios</button></div></form></dialog>`;
   $("#refreshAdvisors").addEventListener("click", loadData);
   $("#advisorSearch").addEventListener("input", event => { const term = event.target.value.toLowerCase(); host.querySelectorAll("#advisorRows tr").forEach(row => { row.hidden = !row.textContent.toLowerCase().includes(term); }); });
   host.querySelectorAll("[data-save-advisor-role]").forEach(button => button.addEventListener("click", async () => {
@@ -105,6 +111,26 @@ function advisorsView() {
     catch (error) { console.error("No se pudo asignar el rol:", error); status.textContent = error.code === "permission-denied" ? "Firebase no autorizó asignar el rol. Publica las reglas actualizadas." : "No se pudo guardar el rol."; }
     finally { button.disabled = false; }
   }));
+  const dialog = $("#accountAccessDialog");
+  host.querySelectorAll("[data-edit-advisor-access]").forEach(button => button.addEventListener("click", () => {
+    const advisor = state.advisors.find(item => item.id === button.dataset.editAdvisorAccess); if (!advisor) return;
+    dialog.dataset.uid = advisor.id; $("#accountDialogName").textContent = advisor.asesor || advisor.usuario || "Cambiar acceso";
+    $("#accountDialogCurrentEmail").textContent = `Correo actual: ${advisor.authEmail || advisor.email || advisor.correoRecuperacion || "Sin correo registrado"}`;
+    $("#accountAccessForm").reset(); $("#accountAccessStatus").textContent = ""; dialog.showModal();
+  }));
+  host.querySelectorAll("[data-close-account-dialog]").forEach(button => button.addEventListener("click", () => dialog.close()));
+  $("#accountAccessForm").addEventListener("submit", async event => {
+    event.preventDefault(); const form = event.currentTarget; const email = form.elements.email.value.trim(); const password = form.elements.password.value; const status = $("#accountAccessStatus"); const submit = form.querySelector("[type=submit]");
+    if (!email && !password) { status.textContent = "Escribe un correo nuevo, una contraseña nueva o ambos."; return; }
+    submit.disabled = true; status.textContent = "Actualizando cuenta…";
+    try {
+      const result = await state.firebase.updateAdvisorAccount({ uid: dialog.dataset.uid, ...(email ? { email } : {}), ...(password ? { password } : {}) });
+      const advisor = state.advisors.find(item => item.id === dialog.dataset.uid);
+      if (advisor && result.email) { advisor.authEmail = result.email; advisor.authEmailVerified = result.emailVerified; advisor.email = result.email; advisor.correoRecuperacion = result.email; }
+      dialog.close(); render(); $("#advisorRoleStatus").textContent = "Acceso de la cuenta actualizado.";
+    } catch (error) { console.error("No se pudo actualizar el acceso del asesor:", error); status.textContent = error.code === "functions/unauthenticated" ? "Tu sesión venció. Inicia sesión otra vez." : error.code === "functions/not-found" ? "Inicia el servicio local indicado en functions/README.md para cambiar credenciales sin desplegar funciones." : error.message || "No se pudo actualizar la cuenta."; }
+    finally { submit.disabled = false; }
+  });
 }
 function sectionsView() {
   const sections = listSections();
@@ -180,7 +206,34 @@ function rolesView() {
     $("#cancelRoleEdit").addEventListener("click", () => { state.roleDraft = false; state.roleEditorOpen = false; rolesView(); });
   }
 }
-function render() { if (!canEnterAdminPanel()) { renderUnauthorized(); return; } document.body.classList.remove("admin-auth-only"); if (!canAccessAdminView(state.view)) state.view = firstAccessibleAdminView(); updateNav(); if (state.view === "dashboard") dashboardView(); else if (state.view === "advisors") advisorsView(); else if (state.view === "sections") sectionsView(); else if (state.view === "permissions") rolesView(); }
+function inlineGuide(text) { return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>"); }
+function guideMarkdown(markdown) {
+  const escaped = escapeHtml(markdown).replace(/\r/g, "");
+  return escaped.split(/\n{2,}/).map(block => {
+    const trimmed = block.trim();
+    const code = trimmed.match(/^\x60{3}powershell\n([\s\S]*?)\n\x60{3}$/i);
+    if (code) return "<pre><code>" + code[1] + "</code></pre>";
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) { const level = Math.min(heading[1].length + 1, 4); return "<h" + level + ">" + inlineGuide(heading[2]) + "</h" + level + ">"; }
+    const lines = trimmed.split("\n");
+    if (lines.every(line => /^\d+\.\s+/.test(line))) return "<ol>" + lines.map(line => "<li>" + inlineGuide(line.replace(/^\d+\.\s+/, "")) + "</li>").join("") + "</ol>";
+    if (lines.every(line => /^-\s+/.test(line))) return "<ul>" + lines.map(line => "<li>" + inlineGuide(line.replace(/^-\s+/, "")) + "</li>").join("") + "</ul>";
+    return "<p>" + inlineGuide(trimmed).replace(/\n/g, "<br>") + "</p>";
+  }).join("");
+}
+async function guideView() {
+  host.innerHTML = "<section class=\"view-heading\"><div><span class=\"eyebrow\">AYUDA DEL PANEL</span><h2>Guía y configuración</h2><p>Instrucciones para entrar al panel y cambiar accesos.</p></div><button class=\"secondary-button\" type=\"button\" id=\"reloadAdminGuide\">Actualizar guía</button></section><article class=\"guide-document\" id=\"adminGuideDocument\"><p>Cargando instrucciones…</p></article>";
+  const target = $("#adminGuideDocument");
+  $("#reloadAdminGuide").addEventListener("click", guideView);
+  try {
+    const response = await fetch("../docs/administracion/accesos-admin.md", { cache: "no-store" });
+    if (!response.ok) throw new Error("No se encontró el archivo en docs/administracion/.");
+    target.innerHTML = guideMarkdown(await response.text());
+  } catch (error) {
+    target.innerHTML = "<div class=\"guide-error\"><strong>No se pudo cargar la guía.</strong><p>" + escapeHtml(error.message || "Revisa el servidor local.") + "</p><p>Busca docs/administracion/accesos-admin.md en el proyecto.</p></div>";
+  }
+}
+function render() { if (!canEnterAdminPanel()) { renderUnauthorized(); return; } document.body.classList.remove("admin-auth-only"); if (!canAccessAdminView(state.view)) state.view = firstAccessibleAdminView(); updateNav(); if (state.view === "dashboard") dashboardView(); else if (state.view === "advisors") advisorsView(); else if (state.view === "sections") sectionsView(); else if (state.view === "permissions") rolesView(); else if (state.view === "guide") guideView(); }
 function navigate(view) { if (!views[view] || !canAccessAdminView(view)) return; if (location.hash !== `#${view}`) location.hash = view; else { state.view = view; render(); } }
 async function loadData() {
   setStatus("Cargando datos…");
@@ -200,6 +253,19 @@ async function loadData() {
       state.firebase.listAdvisorRoles(),
       state.isSystemAdmin ? state.firebase.listAdvisorSectionPermissions() : Promise.resolve([])
     ]);
+    state.accountManagementAvailable = false;
+    if (state.isSystemAdmin && advisors.length) {
+      try {
+        loadStep = "consultar correos de Firebase Authentication";
+        const accounts = await state.firebase.listAdvisorAccounts(advisors.map(advisor => advisor.id));
+        const accountByUid = new Map(accounts.map(account => [account.uid, account]));
+        advisors.forEach(advisor => { advisor.authEmail = accountByUid.get(advisor.id)?.email || advisor.email || advisor.correoRecuperacion || ""; advisor.authEmailVerified = accountByUid.get(advisor.id)?.emailVerified; });
+        state.accountManagementAvailable = true;
+      } catch (error) {
+        console.warn("No respondió el servicio de cuentas local ni la función de nube:", error);
+        advisors.forEach(advisor => { advisor.authEmail = advisor.email || advisor.correoRecuperacion || ""; });
+      }
+    } else if (state.isSystemAdmin) state.accountManagementAvailable = true;
     const knownRoles = new Map(roles.map(role => [role.id, role]));
     const legacyByAdvisor = new Map(legacyPermissions.map(item => [item.id, item]));
     state.advisors = advisors;
@@ -250,7 +316,7 @@ async function loadData() {
     }
       state.advisors = state.advisors.map(advisor => ({ ...advisor, rol: advisor.rol || "asesor" }));
     if (!state.roles.some(role => role.id === state.selectedRole) && !state.roleDraft) state.selectedRole = state.roles[0]?.id || "asesor";
-    setStatus("Datos sincronizados con Firebase"); render();
+    setStatus(state.isSystemAdmin && !state.accountManagementAvailable ? "Datos listos; inicia la herramienta local para gestionar cuentas" : "Datos sincronizados con Firebase", state.isSystemAdmin && !state.accountManagementAvailable); render();
   } catch (error) {
     console.error(`No se pudo completar el paso «${loadStep}» en la administración de INTERCOL:`, error);
     const errorCode = error?.code || "error";
@@ -312,7 +378,7 @@ async function handleUser(user) {
     try { assignedRole = await state.firebase.getAdvisorRolePermissions(state.profile.rol); }
     catch (error) { console.error("No se pudo consultar el rol asignado:", error); }
   }
-  state.isSystemAdmin = user.uid === ADMIN_UID || String(user.email || "").toLowerCase() === ADMIN_EMAIL;
+  state.isSystemAdmin = user.uid === ADMIN_UID || ADMIN_EMAILS.includes(String(user.email || "").toLowerCase());
   state.roleAdminPermissions = assignedRole?.permisos?.["roles-permisos"] || {};
   state.adminPanelPermissions = state.isSystemAdmin || state.profile?.rol === "administrador" ? { ...administratorPanelPermissions } : adminPanelPermissionFor(assignedRole?.permisos || {});
   if (!state.isSystemAdmin && state.profile?.rol === "administrador" && assignedRole) {

@@ -1,11 +1,15 @@
 // Configuración e inicialización de Firebase para INTERCOL.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-functions.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, updatePassword, sendPasswordResetEmail, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, getFirestore, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where, setDoc, writeBatch, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 export const firebaseConfig = { apiKey: "AIzaSyDK0tK8yptJYD8R6f0VkoiyW2Lekl9KKAQ", authDomain: "intercol-784d9.firebaseapp.com", projectId: "intercol-784d9", storageBucket: "intercol-784d9.firebasestorage.app", messagingSenderId: "380146455867", appId: "1:380146455867:web:2d3b17e736f16ce88a931e" };
 export const firebaseApp = initializeApp(firebaseConfig);
 export const firestore = getFirestore(firebaseApp);
 export const auth = getAuth(firebaseApp);
+const functions = getFunctions(firebaseApp, "us-central1");
+const listAdvisorAccountsCallable = httpsCallable(functions, "listAdvisorAccounts");
+const updateAdvisorAccountCallable = httpsCallable(functions, "updateAdvisorAccount");
 const temporaryMessages = collection(firestore, "smsTemp");
 const paymentNotifications = collection(firestore, "notificacionesPago");
 const normalizeCustomerId = value => String(value ?? "").trim().toLocaleLowerCase("es").replace(/[\s.-]/g, "");
@@ -120,6 +124,30 @@ export async function changeAdvisorPassword({ currentPassword, newPassword }) {
 export function signOutAdvisor() { return signOut(auth); }
 export async function getAdvisorProfile(uid) { const snapshot = await getDoc(doc(firestore, "asesores", uid)); return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null; }
 export async function listAdvisorProfiles() { const snapshot = await getDocs(collection(firestore, "asesores")); return snapshot.docs.map(item => ({ id: item.id, ...item.data() })); }
+async function callLocalAdmin(path, payload) {
+  if (!["localhost", "127.0.0.1"].includes(location.hostname)) return null;
+  const user = auth.currentUser;
+  if (!user) throw new Error("Inicia sesión como administrador para continuar.");
+  const token = await user.getIdToken();
+  const response = await fetch("http://127.0.0.1:8765/api/" + path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }, body: JSON.stringify(payload) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(result.error || "El servicio local no pudo completar la solicitud.");
+    error.code = response.status === 401 ? "auth/unauthenticated" : response.status === 403 ? "permission-denied" : response.status === 409 ? "auth/email-already-in-use" : "admin-local/error";
+    throw error;
+  }
+  return result;
+}
+export async function listAdvisorAccounts(uids) {
+  try { const local = await callLocalAdmin("accounts/list", { uids }); if (local) return local.accounts || []; }
+  catch (error) { if (error.name !== "TypeError") throw error; }
+  const result = await listAdvisorAccountsCallable({ uids }); return result.data.accounts || [];
+}
+export async function updateAdvisorAccount({ uid, email, password }) {
+  try { const local = await callLocalAdmin("accounts/update", { uid, email, password }); if (local) return local; }
+  catch (error) { if (error.name !== "TypeError") throw error; }
+  const result = await updateAdvisorAccountCallable({ uid, email, password }); return result.data;
+}
 export async function getAdvisorSectionPermissions(uid) { const snapshot = await getDoc(doc(firestore, "permisosAsesores", uid)); return snapshot.exists() ? snapshot.data() : null; }
 export async function listAdvisorSectionPermissions() { const snapshot = await getDocs(collection(firestore, "permisosAsesores")); return snapshot.docs.map(item => ({ id: item.id, ...item.data() })); }
 export function saveAdvisorSectionPermissions(uid, role, permissions, updatedBy) { return setDoc(doc(firestore, "permisosAsesores", uid), { asesorUid: uid, rol: role, permisos: permissions, actualizadoPor: updatedBy, actualizadoEn: serverTimestamp() }); }
@@ -542,6 +570,6 @@ export function saveAdjustmentZones(zones) {
     .filter(zone => zone.nombre && Number.isFinite(zone.valor) && zone.valor > 0);
   return setDoc(adjustmentZonesConfig, { zonas: cleanZones, actualizadoEn: serverTimestamp() });
 }
-window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, deleteAdvisorRole, saveAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeChatDirectory, subscribeChatConversations, subscribeChatMessages, ensureChatAdvisorProfile, seedChatDirectoryForExistingAdvisors, createChatConversationAndSend, markChatConversationRead, updateChatAdvisorPresence, updateChatTyping, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribeBoxLocationOptions, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
+window.INTERCOL_FIREBASE = { app: firebaseApp, db: firestore, auth, observeAuth, getAdvisorProfile, listAdvisorProfiles, listAdvisorAccounts, updateAdvisorAccount, getAdvisorSectionPermissions, listAdvisorSectionPermissions, saveAdvisorSectionPermissions, getAdvisorRolePermissions, listAdvisorRoles, ensureAdvisorRole, deleteAdvisorRole, saveAdvisorRole, assignAdvisorRole, registerAdvisor, signInAdvisor, sendAdvisorPasswordReset, setAdvisorRecoveryEmail, changeAdvisorPassword, signOutAdvisor, subscribeChatDirectory, subscribeChatConversations, subscribeChatMessages, ensureChatAdvisorProfile, seedChatDirectoryForExistingAdvisors, createChatConversationAndSend, markChatConversationRead, updateChatAdvisorPresence, updateChatTyping, subscribeTemporaryMessages, createTemporaryMessage, updateTemporaryMessage, deleteTemporaryMessage, subscribePaymentNotifications, createPaymentNotification, updatePaymentNotification, setPaymentNotificationReviewed, deletePaymentNotification, subscribeRetiredRecords, createRetiredRecord, updateRetiredRecord, deleteRetiredRecord, subscribeTvRetirementRecords, createTvRetirementRecord, updateTvRetirementRecord, deleteTvRetirementRecord, createVerifiedBox, updateVerifiedBox, updateVerifiedBoxPorts, deleteVerifiedBox, subscribeVerifiedBoxes, subscribeBoxLocationOptions, findClientByCedula, createClient, subscribeClients, updateClientProfile, subscribeClientProcesses, createClientProcess, updateClientProcess, completeClientProfileStep, deleteClientProcess, subscribePublicSupportConfig, savePublicSupportConfig, subscribeAdjustmentZones, saveAdjustmentZones };
 window.dispatchEvent(new Event("intercol-firebase-ready"));
 

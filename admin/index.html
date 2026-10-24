@@ -7,7 +7,7 @@
   <title>Administración · INTERCOL</title>
   <link rel="icon" type="image/svg+xml" href="../favicon.svg">
   <script>try{const theme=localStorage.getItem("intercol_theme_v2");document.documentElement.dataset.theme=theme==="dark"||theme==="light"?theme:(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch{}</script>
-  <link rel="stylesheet" href="styles.css?v=20261009-chat-standalone">
+  <link rel="stylesheet" href="styles.css?v=20261024-admin-guide">
 </head>
 <body>
   <div class="admin-shell">
@@ -25,6 +25,9 @@
       <button class="admin-nav-item" type="button" data-view="sections"><span>▣</span>Secciones</button>
       <button class="admin-nav-item" type="button" data-view="permissions"><span>⚿</span>Roles y permisos</button>
 
+      <div class="nav-label guide-label">HERRAMIENTAS</div>
+      <button class="admin-nav-item" type="button" data-view="guide"><span>▤</span>Guía y configuración</button>
+
       <a class="sidebar-note sidebar-home-link" href="../index.html" title="Volver al panel principal"><span class="status-dot" aria-hidden="true"></span><span>Volver al panel principal<br><small>INTERCOL</small></span></a>
     </aside>
 
@@ -39,7 +42,7 @@
     </main>
   </div>
   <script src="../secciones/registry.js?v=20261016-box-catalog"></script>
-  <script type="module" src="firebase-config.js?v=20261009-chat-standalone"></script>
-  <script src="app.js?v=20261016-box-catalog"></script>
+  <script type="module" src="firebase-config.js?v=20261024-admin-guide"></script>
+  <script src="app.js?v=20261024-admin-guide"></script>
 </body>
 </html>
