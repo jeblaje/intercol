@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reporte servicio · INTERCOL</title>
-  <link rel="stylesheet" href="style.css?v=20261020-interbot-boton-copiar">
+  <link rel="stylesheet" href="style.css?v=20261028-numero-cliente">
 </head>
 <body>
   <main class="report-app">
@@ -21,6 +21,7 @@
           <label>Número de caja<input name="boxNumber" placeholder="Ej. 1210" required></label>
           <fieldset class="button-field"><legend>Tipo de caja</legend><input type="hidden" name="boxType" value="X8"><div id="boxTypeChoices" class="button-choices"><button type="button" class="select-button selected" data-value="X8" aria-pressed="true">X8</button><button type="button" class="select-button" data-value="X16" aria-pressed="false">X16</button></div></fieldset>
           <label>Usuario de referencia (CC)<input name="cedula" inputmode="numeric" placeholder="Número de cédula" required></label>
+          <label>Número del cliente<input name="clientNumber" placeholder="Número de cliente" required></label>
           <label>Nombre del cliente<input name="customerName" placeholder="Nombre completo" required></label>
           <label>Dirección<input name="address" placeholder="Dirección" required></label>
           <label>Barrio<input name="neighborhood" placeholder="Barrio" required></label>
@@ -54,6 +55,7 @@
         <div id="noPowerFields" class="form-grid" hidden>
           <label>Cliente<input name="noPowerCustomerName" placeholder="Nombre completo" required></label>
           <label>Cédula<input name="noPowerCedula" inputmode="numeric" placeholder="Número de cédula" required></label>
+          <label>Número del cliente<input name="noPowerClientNumber" placeholder="Número de cliente" required></label>
           <label>Dirección<input name="noPowerAddress" placeholder="Dirección" required></label>
           <label>Barrio<input name="noPowerNeighborhood" placeholder="Barrio" required></label>
           <label>Número de caja<input name="noPowerBoxNumber" placeholder="Número de caja" required></label>
@@ -75,6 +77,6 @@
       <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><div class="output-heading-actions"><a class="clear-button interbot-groups-link" href="https://crm.isp-intercol.com/groups" target="_blank" rel="noopener noreferrer">Abrir grupos en Interbot ↗</a><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
     </section>
   </main>
-  <script src="script.js?v=20261020-high-power-service-type"></script>
+  <script src="script.js?v=20261028-numero-cliente"></script>
 </body>
 </html>

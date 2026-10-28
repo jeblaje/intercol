@@ -113,6 +113,7 @@ function renderReport() {
       reportTitle,
       optionalLine("Cliente", value("noPowerCustomerName")),
       optionalLine("Cédula", value("noPowerCedula")),
+      optionalLine("Número del cliente", value("noPowerClientNumber")),
       optionalLine("Dirección", value("noPowerAddress")),
       optionalLine("Barrio", value("noPowerNeighborhood")),
       optionalLine("Número de caja", value("noPowerBoxNumber")),
@@ -171,6 +172,7 @@ function renderReport() {
     `N° de caja: ${value("boxNumber")}`,
     `Tipo de caja: ${value("boxType")}`,
     `Usuario de referencia (CC): ${value("cedula")}`,
+    `Número del cliente: ${value("clientNumber")}`,
     `Nombre: ${value("customerName")}`,
     `Dirección: ${value("address")}`,
     `Barrio: ${value("neighborhood")}`,
@@ -197,6 +199,12 @@ function ordinal(number) {
 
 document.querySelector("#copyReport").addEventListener("click", async () => {
   renderReport();
+  const clientNumberField = form.elements[isNoPower() ? "noPowerClientNumber" : "clientNumber"];
+  if (!clientNumberField.value.trim()) {
+    copyStatus.textContent = "Ingresa el número del cliente antes de copiar el reporte.";
+    clientNumberField.focus();
+    return;
+  }
   try {
     await navigator.clipboard.writeText(output.value);
     copyStatus.textContent = "Reporte copiado. Pégalo en el chat o formulario de destino.";
