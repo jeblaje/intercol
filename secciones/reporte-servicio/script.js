@@ -145,6 +145,7 @@ function renderReport() {
       "",
       optionalLine("Cliente", value("highCustomerName")),
       optionalLine("Cédula", value("highCedula")),
+      optionalLine("Número del cliente", value("highClientNumber")),
       optionalLine("Número de caja", value("highBoxNumber")),
       optionalLine("Tipo de caja", value("highBoxType")),
       optionalLine("Dirección", value("highAddress")),
@@ -199,7 +200,8 @@ function ordinal(number) {
 
 document.querySelector("#copyReport").addEventListener("click", async () => {
   renderReport();
-  const clientNumberField = form.elements[isNoPower() ? "noPowerClientNumber" : "clientNumber"];
+  const clientNumberName = isHighPower() ? "highClientNumber" : isNoPower() ? "noPowerClientNumber" : "clientNumber";
+  const clientNumberField = form.elements[clientNumberName];
   if (!clientNumberField.value.trim()) {
     copyStatus.textContent = "Ingresa el número del cliente antes de copiar el reporte.";
     clientNumberField.focus();

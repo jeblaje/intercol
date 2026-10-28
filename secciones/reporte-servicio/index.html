@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reporte servicio · INTERCOL</title>
-  <link rel="stylesheet" href="style.css?v=20261028-numero-cliente">
+  <link rel="stylesheet" href="style.css?v=20261028-numero-cliente-potencia">
 </head>
 <body>
   <main class="report-app">
@@ -39,6 +39,7 @@
         <div id="highPowerFields" class="form-grid" hidden>
           <label>Cliente<input name="highCustomerName" placeholder="Nombre del cliente" required></label>
           <label>Cédula<input name="highCedula" inputmode="numeric" placeholder="Número de cédula" required></label>
+          <label>Número del cliente<input name="highClientNumber" placeholder="Número de cliente" required></label>
           <label>Número de caja<input name="highBoxNumber" placeholder="Número de caja" required></label>
           <fieldset class="button-field"><legend>Tipo de caja</legend><input type="hidden" name="highBoxType" value="X8"><div id="highBoxTypeChoices" class="button-choices"></div></fieldset>
           <label class="full-width">Dirección<input name="highAddress" placeholder="Dirección" required></label>
@@ -77,6 +78,6 @@
       <section class="output-area" aria-labelledby="outputTitle"><div class="output-heading"><div><span class="kicker">VISTA PREVIA</span><h2 id="outputTitle">Reporte listo para enviar</h2></div><div class="output-heading-actions"><a class="clear-button interbot-groups-link" href="https://crm.isp-intercol.com/groups" target="_blank" rel="noopener noreferrer">Abrir grupos en Interbot ↗</a><button type="button" class="copy-button" id="copyReport">Copiar reporte</button></div></div><textarea id="reportOutput" readonly aria-label="Reporte de servicio organizado"></textarea><span id="copyStatus" role="status" aria-live="polite"></span></section>
     </section>
   </main>
-  <script src="script.js?v=20261028-numero-cliente"></script>
+  <script src="script.js?v=20261028-numero-cliente-potencia"></script>
 </body>
 </html>
