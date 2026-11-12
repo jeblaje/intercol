@@ -170,6 +170,20 @@ function formatBoxDate(value) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : String(value || "—");
 }
 
+function formatBoxDateTime(box) {
+  const createdAt = timestampMillis(box?.creadoEn) || timestampMillis(box?.actualizadoEn);
+  if (createdAt) return new Intl.DateTimeFormat("es-CO", {
+    timeZone: "America/Bogota",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  }).format(new Date(createdAt));
+  return formatBoxDate(box?.fecha);
+}
+
 function renderVerifiedBoxes() {
   const term = verifiedSearch.value.trim().toLocaleLowerCase();
   const type = verifiedType.value;
@@ -405,8 +419,11 @@ function normalizedBoxNumber(value) {
 function normalizedBoxLocation(value) {
   return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
 }
+function normalizedBoxZone(value) {
+  return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+}
 function boxIdentityKey(box) {
-  return [normalizedBoxNumber(box.numeroCaja), normalizedBoxLocation(box.zona)].join("|");
+  return [normalizedBoxNumber(box.numeroCaja), normalizedBoxZone(box.zona)].join("|");
 }
 
 function todayIsoDate() {
@@ -471,14 +488,14 @@ function findBoxMatches(number, zone) {
   const grouped = new Map();
   verifiedBoxes.forEach(box => {
     const boxNumber = normalizedBoxNumber(box.numeroCaja);
-    const boxZone = normalizedBoxLocation(box.zona);
-    if (!boxNumber || !boxZone) return;
+    const boxZone = normalizedBoxZone(box.zona);
+    if (!boxNumber) return;
     if (!boxNumber.includes(numberQuery) && !numberQuery.includes(boxNumber)) return;
-    if (!boxZone.includes(zoneQuery) && !zoneQuery.includes(boxZone)) return;
 
     const score = (boxNumber === numberQuery ? 4 : 0) + (boxZone === zoneQuery ? 4 : 0)
       + (boxNumber.startsWith(numberQuery) || numberQuery.startsWith(boxNumber) ? 2 : 0)
-      + (boxZone.startsWith(zoneQuery) || zoneQuery.startsWith(boxZone) ? 2 : 0);
+      + (zoneQuery && (boxZone.startsWith(zoneQuery) || zoneQuery.startsWith(boxZone)) ? 2 : 0)
+      + (zoneQuery && (boxZone.includes(zoneQuery) || zoneQuery.includes(boxZone)) ? 1 : 0);
     const key = boxIdentityKey(box);
     const current = grouped.get(key);
     if (!current || score > current.score || (score === current.score && timestampMillis(box.creadoEn) > timestampMillis(current.box.creadoEn))) {
@@ -508,7 +525,7 @@ function renderBoxMatches(matches) {
     const title = document.createElement("strong");
     title.textContent = `${displayBoxNumber(box.numeroCaja)} · ${box.zona || "Sin zona"}`;
     const details = document.createElement("span");
-    details.textContent = [box.barrio, box.direccion, box.tipoCaja?.toUpperCase(), `Verificada ${formatBoxDate(box.fecha)}`].filter(Boolean).join(" · ");
+    details.textContent = [box.barrio, box.direccion, box.tipoCaja?.toUpperCase(), `Última verificación ${formatBoxDateTime(box)}`].filter(Boolean).join(" · ");
     button.append(title, details);
     boxMatches.append(button);
   });
@@ -527,7 +544,7 @@ boxMatches.addEventListener("click", event => {
   if (hasOtherData && !window.confirm(`¿Cargar ${displayBoxNumber(box.numeroCaja)} de la zona ${box.zona}? Se reemplazarán los datos escritos en el formulario.`)) return;
   if (applyLatestVerification(box)) {
     renderBoxMatches([]);
-    setBoxLookupStatus(`Se cargó ${displayBoxNumber(box.numeroCaja)} · ${box.zona} · última verificación ${formatBoxDate(box.fecha)}.`, "latest");
+    setBoxLookupStatus(`Se cargó ${displayBoxNumber(box.numeroCaja)} · ${box.zona} · última verificación ${formatBoxDateTime(box)}.`, "latest");
   }
 });
 
@@ -564,7 +581,7 @@ function lookupExistingBox() {
     setBoxLookupStatus(sameNumber.length ? `Hay ${sameNumber.length} registro(s) con este número, pero la zona no coincide con “${data.zona}”.` : "No encontramos cajas parecidas en esta zona; al guardar se registrará como caja nueva.", "new");
     return;
   }
-  setBoxLookupStatus(`Encontramos ${matches.length} coincidencia(s) para ${number} en ${data.zona}. Elige la caja que corresponda.`);
+  setBoxLookupStatus(`Encontramos ${matches.length} posible(s) para la caja ${number}. Compara la zona y selecciona la que corresponda; se cargará su última verificación.`);
 }
 
 async function saveVerifiedBox() {
