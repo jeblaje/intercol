@@ -513,7 +513,10 @@ function findBoxMatches(number, zone) {
 function renderBoxMatches(matches) {
   boxMatchResults = matches;
   boxMatches.replaceChildren();
-  showBoxMatchesButton.hidden = true;
+  showBoxMatchesButton.hidden = !matches.length;
+  showBoxMatchesButton.textContent = "×";
+  showBoxMatchesButton.setAttribute("aria-label", "Cerrar coincidencias");
+  showBoxMatchesButton.title = "Cerrar coincidencias";
   boxMatches.hidden = !matches.length;
   if (!matches.length) return;
   const header = document.createElement("div");
@@ -521,17 +524,7 @@ function renderBoxMatches(matches) {
   const heading = document.createElement("p");
   heading.className = "box-match-heading";
   heading.textContent = `Cajas parecidas (${matches.length}) · selecciona una para cargar sus datos`;
-  const closeButton = document.createElement("button");
-  closeButton.type = "button";
-  closeButton.className = "box-match-close";
-  closeButton.setAttribute("aria-label", "Cerrar coincidencias");
-  closeButton.title = "Cerrar coincidencias";
-  closeButton.textContent = "×";
-  closeButton.addEventListener("click", () => {
-    boxMatches.hidden = true;
-    showBoxMatchesButton.hidden = false;
-  });
-  header.append(heading, closeButton);
+  header.append(heading);
   boxMatches.append(header);
   matches.forEach(box => {
     const button = document.createElement("button");
@@ -550,8 +543,19 @@ function renderBoxMatches(matches) {
 
 showBoxMatchesButton.addEventListener("click", () => {
   if (!boxMatchResults.length) return;
-  boxMatches.hidden = false;
-  showBoxMatchesButton.hidden = true;
+  const opening = boxMatches.hidden;
+  boxMatches.hidden = !opening;
+  showBoxMatchesButton.textContent = opening ? "×" : "⌄";
+  showBoxMatchesButton.setAttribute("aria-label", opening ? "Cerrar coincidencias" : "Mostrar coincidencias");
+  showBoxMatchesButton.title = opening ? "Cerrar coincidencias" : "Mostrar coincidencias";
+});
+
+document.addEventListener("pointerdown", event => {
+  if (boxMatches.hidden || event.target.closest(".box-zone-search")) return;
+  boxMatches.hidden = true;
+  showBoxMatchesButton.textContent = "⌄";
+  showBoxMatchesButton.setAttribute("aria-label", "Mostrar coincidencias");
+  showBoxMatchesButton.title = "Mostrar coincidencias";
 });
 
 boxMatches.addEventListener("pointerdown", event => {
