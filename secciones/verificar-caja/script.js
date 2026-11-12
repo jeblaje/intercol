@@ -360,6 +360,7 @@ function restoreBoxDraft() {
 
 const dateField = document.querySelector("#boxDate");
 const boxLookupStatus = document.querySelector("#boxLookupStatus");
+const boxMatches = document.querySelector("#boxMatches");
 function setBoxLookupStatus(message, state = "") {
   pendingLatestVerification = null;
   boxLookupStatus.replaceChildren(document.createTextNode(message));
@@ -386,8 +387,10 @@ restoreBoxDraft();
 
 function updateStatus() {
   const data = boxData();
-  const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim();
-  statusText.textContent = ready ? `${data.boxType.toUpperCase()} · ${users.length} cédula${users.length === 1 ? "" : "s"}` : "Completa los datos de la caja";
+  const loadedIdentityChanged = Boolean(newVerificationFromHistory && lastPrefilledBoxKey
+    && boxIdentityKey({ numeroCaja: data.boxNumber, zona: data.zona }) !== lastPrefilledBoxKey);
+  const ready = data.date && data.boxType && data.boxNumber.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim() && !loadedIdentityChanged;
+  statusText.textContent = loadedIdentityChanged ? "Elige la coincidencia de la nueva caja" : ready ? `${data.boxType.toUpperCase()} · ${users.length} cédula${users.length === 1 ? "" : "s"}` : "Completa los datos de la caja";
   markBoxVerifiedButton.disabled = !ready || !users.length;
   markBoxVerifiedButton.textContent = editingVerifiedBoxId ? "Guardar cambios" : "Caja verificada";
   cancelBoxEditButton.hidden = !(editingVerifiedBoxId || newVerificationFromHistory);
@@ -397,13 +400,13 @@ function updateStatus() {
 }
 
 function normalizedBoxNumber(value) {
-  return String(value || "").trim().replace(/^caja\s*/i, "").toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "").replace(/[^a-z0-9-]/g, "");
+  return String(value || "").trim().replace(/^caja\s*/i, "").toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 }
 function normalizedBoxLocation(value) {
   return String(value || "").trim().toLocaleLowerCase("es").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
 }
 function boxIdentityKey(box) {
-  return [normalizedBoxNumber(box.numeroCaja), String(box.tipoCaja || "").toLowerCase(), normalizedBoxLocation(box.barrio), normalizedBoxLocation(box.zona)].join("|");
+  return [normalizedBoxNumber(box.numeroCaja), normalizedBoxLocation(box.zona)].join("|");
 }
 
 function todayIsoDate() {
@@ -460,22 +463,85 @@ function applyLatestVerification(box, { confirmReplace = false } = {}) {
   return true;
 }
 
-function findLatestVerification(identity) {
-  const key = normalizedBoxNumber(identity.numeroCaja);
-  if (!key || ["sinnumero", "nonumero", "na"].includes(key)) return null;
-  return verifiedBoxes.filter(box => normalizedBoxNumber(box.numeroCaja) === key
-    && String(box.tipoCaja || "").toLowerCase() === String(identity.boxType || "").toLowerCase()
-    && normalizedBoxLocation(box.barrio) === normalizedBoxLocation(identity.barrio)
-    && normalizedBoxLocation(box.zona) === normalizedBoxLocation(identity.zona))
-    .sort((a, b) => timestampMillis(b.creadoEn) - timestampMillis(a.creadoEn) || String(b.fecha || "").localeCompare(String(a.fecha || "")))[0] || null;
+function findBoxMatches(number, zone) {
+  const numberQuery = normalizedBoxNumber(number);
+  const zoneQuery = normalizedBoxLocation(zone);
+  if (!numberQuery || !zoneQuery) return [];
+
+  const grouped = new Map();
+  verifiedBoxes.forEach(box => {
+    const boxNumber = normalizedBoxNumber(box.numeroCaja);
+    const boxZone = normalizedBoxLocation(box.zona);
+    if (!boxNumber || !boxZone) return;
+    if (!boxNumber.includes(numberQuery) && !numberQuery.includes(boxNumber)) return;
+    if (!boxZone.includes(zoneQuery) && !zoneQuery.includes(boxZone)) return;
+
+    const score = (boxNumber === numberQuery ? 4 : 0) + (boxZone === zoneQuery ? 4 : 0)
+      + (boxNumber.startsWith(numberQuery) || numberQuery.startsWith(boxNumber) ? 2 : 0)
+      + (boxZone.startsWith(zoneQuery) || zoneQuery.startsWith(boxZone) ? 2 : 0);
+    const key = boxIdentityKey(box);
+    const current = grouped.get(key);
+    if (!current || score > current.score || (score === current.score && timestampMillis(box.creadoEn) > timestampMillis(current.box.creadoEn))) {
+      grouped.set(key, { box, score });
+    }
+  });
+  return [...grouped.values()]
+    .sort((a, b) => b.score - a.score || timestampMillis(b.box.creadoEn) - timestampMillis(a.box.creadoEn))
+    .slice(0, 8)
+    .map(item => item.box);
 }
+
+function renderBoxMatches(matches) {
+  boxMatches.replaceChildren();
+  boxMatches.hidden = !matches.length;
+  if (!matches.length) return;
+  const heading = document.createElement("p");
+  heading.className = "box-match-heading";
+  heading.textContent = "Cajas parecidas · selecciona una para cargar sus datos";
+  boxMatches.append(heading);
+  matches.forEach(box => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "box-match-option";
+    button.setAttribute("role", "option");
+    button.dataset.matchBoxId = box.id;
+    const title = document.createElement("strong");
+    title.textContent = `${displayBoxNumber(box.numeroCaja)} · ${box.zona || "Sin zona"}`;
+    const details = document.createElement("span");
+    details.textContent = [box.barrio, box.direccion, box.tipoCaja?.toUpperCase(), `Verificada ${formatBoxDate(box.fecha)}`].filter(Boolean).join(" · ");
+    button.append(title, details);
+    boxMatches.append(button);
+  });
+}
+
+boxMatches.addEventListener("pointerdown", event => {
+  if (event.target.closest("[data-match-box-id]")) event.preventDefault();
+});
+boxMatches.addEventListener("click", event => {
+  const option = event.target.closest("[data-match-box-id]");
+  if (!option) return;
+  const box = verifiedBoxes.find(item => item.id === option.dataset.matchBoxId);
+  if (!box) return;
+  const data = boxData();
+  const hasOtherData = Boolean(users.length || data.address.trim() || data.barrio.trim() || data.technician.trim() || data.advisor.trim() || data.link.trim() || data.notasVerificacion.trim());
+  if (hasOtherData && !window.confirm(`¿Cargar ${displayBoxNumber(box.numeroCaja)} de la zona ${box.zona}? Se reemplazarán los datos escritos en el formulario.`)) return;
+  if (applyLatestVerification(box)) {
+    renderBoxMatches([]);
+    setBoxLookupStatus(`Se cargó ${displayBoxNumber(box.numeroCaja)} · ${box.zona} · última verificación ${formatBoxDate(box.fecha)}.`, "latest");
+  }
+});
 
 function lookupExistingBox() {
   if (editingVerifiedBoxId) return;
   const data = boxData();
   const number = data.boxNumber.trim();
-  if (!number) { setBoxLookupStatus("Completa el número, barrio y zona para buscar la última verificación."); return; }
+  if (!number || !data.zona.trim()) {
+    renderBoxMatches([]);
+    if (number) setBoxLookupStatus("Indica la zona para ver las coincidencias de esta caja.");
+    return;
+  }
   if (["sinnumero", "nonumero", "na"].includes(normalizedBoxNumber(number))) {
+    renderBoxMatches([]);
     if (lastPrefilledBoxKey && hasBoxDraftData()) {
       if (!window.confirm("Las cajas sin número son independientes. ¿Quieres limpiar los datos cargados de la caja anterior?")) return;
       const type = data.boxType;
@@ -487,37 +553,24 @@ function lookupExistingBox() {
     setBoxLookupStatus("Las cajas sin número se registran de forma independiente."); return;
   }
   const sameNumber = verifiedBoxes.filter(box => normalizedBoxNumber(box.numeroCaja) === normalizedBoxNumber(number));
-  if (!data.barrio.trim() || !data.zona.trim()) {
-    setBoxLookupStatus(sameNumber.length ? "Hay cajas con este número. Indica el barrio y la zona para identificar la correcta y cargar su última verificación." : "Indica también el barrio y la zona para registrar esta caja correctamente.");
-    return;
-  }
-  const identity = { numeroCaja: number, boxType: data.boxType, barrio: data.barrio, zona: data.zona };
-  const latest = findLatestVerification(identity);
-  if (!latest) {
-    const [legacyNumber, legacyType] = lastPrefilledBoxKey.split("|");
-    if (pendingLegacyPrefill && pendingLegacyBoxOriginId && normalizedBoxNumber(number) === legacyNumber && String(data.boxType || "").toLowerCase() === legacyType) {
+  const matches = findBoxMatches(number, data.zona);
+  renderBoxMatches(matches);
+  if (!matches.length) {
+    const [legacyNumber] = lastPrefilledBoxKey.split("|");
+    if (pendingLegacyPrefill && pendingLegacyBoxOriginId && normalizedBoxNumber(number) === legacyNumber) {
       setBoxLookupStatus("Esta ficha histórica no tenía barrio ni zona. Se conserva como base; al guardar, el historial quedará vinculado a la ubicación que indiques.", "latest");
       return;
     }
-    if (lastPrefilledBoxKey && boxIdentityKey(identity) !== lastPrefilledBoxKey) {
-      if (!window.confirm(`No hay una verificación anterior para la caja ${number} en ${data.barrio}, zona ${data.zona}. ¿Quieres limpiar los datos anteriores y empezar un registro nuevo?`)) return;
-      resetBoxForm();
-      boxForm.elements.boxNumber.value = number;
-      Array.from(boxForm.elements.boxType).forEach(input => { input.checked = input.value === identity.boxType; });
-      boxForm.elements.barrio.value = identity.barrio;
-      boxForm.elements.zona.value = identity.zona;
-      updateStatus();
-    }
-    lastPrefilledBoxKey = "";
-    setBoxLookupStatus(sameNumber.length ? `Hay ${sameNumber.length} verificación(es) con este número en otra ubicación o tipo. No cargamos esos datos para evitar usar la caja equivocada.` : "No encontramos esta caja en este barrio y zona; al guardar se registrará como caja nueva.", "new"); return;
+    setBoxLookupStatus(sameNumber.length ? `Hay ${sameNumber.length} registro(s) con este número, pero la zona no coincide con “${data.zona}”.` : "No encontramos cajas parecidas en esta zona; al guardar se registrará como caja nueva.", "new");
+    return;
   }
-  if (applyLatestVerification(latest, { confirmReplace: true })) setBoxLookupStatus(`Fecha: ${formatBoxDate(latest.fecha)} · La realizó: ${latest.tecnico || "Sin registrar"}. Se cargaron sus datos para iniciar esta nueva verificación.`, "latest");
+  setBoxLookupStatus(`Encontramos ${matches.length} coincidencia(s) para ${number} en ${data.zona}. Elige la caja que corresponda.`);
 }
 
 async function saveVerifiedBox() {
   const creatingNewVerification = !editingVerifiedBoxId;
   const data = boxData();
-  const ready = data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim() && users.length;
+  const ready = data.date && data.boxType && data.boxNumber.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim() && users.length;
   if (!ready) { verifiedStatus.textContent = "Completa los datos generales y agrega al menos una cédula."; return; }
   if (data.link && !safeFilterLink(data.link)) { verifiedStatus.textContent = "El link debe comenzar con http:// o https://."; return; }
   const firebase = window.parent.INTERCOL_FIREBASE;
@@ -619,7 +672,7 @@ function resetBoxForm() {
   updateStatus();
   updatePortAnnotation();
   copyStatus.textContent = "Los datos de la caja se limpiaron. Puedes registrar la siguiente.";
-  setBoxLookupStatus("Al escribir un número guardado, se cargarán los datos de la última verificación.");
+  setBoxLookupStatus("Al escribir el número de caja y la zona guardados, se cargarán los datos de la última verificación.");
 }
 
 function cleanCell(value) {
@@ -628,7 +681,7 @@ function cleanCell(value) {
 
 function updateSheetRows() {
   const data = boxData();
-  const ready = Boolean(data.date && data.boxType && data.boxNumber.trim() && data.address.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim());
+  const ready = Boolean(data.date && data.boxType && data.boxNumber.trim() && data.barrio.trim() && data.zona.trim() && data.technician.trim() && data.advisor.trim());
   copySheetButton.disabled = !ready || !users.length;
   if (!ready) {
     copyStatus.textContent = "Completa los datos generales de la caja.";
@@ -868,10 +921,11 @@ userForm.addEventListener("submit", event => {
   cedulaInput.focus();
 });
 
-boxForm.addEventListener("input", () => {
+boxForm.addEventListener("input", event => {
   updateStatus();
   if (selectedId) selectUser(selectedId);
   else updatePortAnnotation();
+  if (event.target === boxForm.elements.boxNumber || event.target === boxForm.elements.zona) lookupExistingBox();
 });
 
 boxForm.elements.barrio.addEventListener("blur", () => { canonicalizeLocationField(boxForm.elements.barrio, "barrio"); updateStatus(); });
@@ -958,12 +1012,6 @@ cancelBoxEditButton.addEventListener("click", () => {
   resetBoxForm();
   copyStatus.textContent = "Edición cancelada. Puedes empezar otra caja.";
 });
-[
-  boxForm.elements.boxNumber,
-  boxForm.elements.barrio,
-  boxForm.elements.zona,
-  ...Array.from(boxForm.elements.boxType)
-].forEach(field => field.addEventListener("change", lookupExistingBox));
 verifiedSearch.addEventListener("input", renderVerifiedBoxes);
 verifiedType.addEventListener("change", renderVerifiedBoxes);
 document.querySelector("#openPublicVerifiedList").addEventListener("click", () => window.parent.postMessage({ type: "INTERCOL_OPEN_VERIFIED_BOXES" }, "*"));
