@@ -375,6 +375,8 @@ function restoreBoxDraft() {
 const dateField = document.querySelector("#boxDate");
 const boxLookupStatus = document.querySelector("#boxLookupStatus");
 const boxMatches = document.querySelector("#boxMatches");
+const showBoxMatchesButton = document.querySelector("#showBoxMatches");
+let boxMatchResults = [];
 function setBoxLookupStatus(message, state = "") {
   pendingLatestVerification = null;
   boxLookupStatus.replaceChildren(document.createTextNode(message));
@@ -509,13 +511,28 @@ function findBoxMatches(number, zone) {
 }
 
 function renderBoxMatches(matches) {
+  boxMatchResults = matches;
   boxMatches.replaceChildren();
+  showBoxMatchesButton.hidden = true;
   boxMatches.hidden = !matches.length;
   if (!matches.length) return;
+  const header = document.createElement("div");
+  header.className = "box-match-header";
   const heading = document.createElement("p");
   heading.className = "box-match-heading";
-  heading.textContent = "Cajas parecidas · selecciona una para cargar sus datos";
-  boxMatches.append(heading);
+  heading.textContent = `Cajas parecidas (${matches.length}) · selecciona una para cargar sus datos`;
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "box-match-close";
+  closeButton.setAttribute("aria-label", "Cerrar coincidencias");
+  closeButton.title = "Cerrar coincidencias";
+  closeButton.textContent = "×";
+  closeButton.addEventListener("click", () => {
+    boxMatches.hidden = true;
+    showBoxMatchesButton.hidden = false;
+  });
+  header.append(heading, closeButton);
+  boxMatches.append(header);
   matches.forEach(box => {
     const button = document.createElement("button");
     button.type = "button";
@@ -530,6 +547,12 @@ function renderBoxMatches(matches) {
     boxMatches.append(button);
   });
 }
+
+showBoxMatchesButton.addEventListener("click", () => {
+  if (!boxMatchResults.length) return;
+  boxMatches.hidden = false;
+  showBoxMatchesButton.hidden = true;
+});
 
 boxMatches.addEventListener("pointerdown", event => {
   if (event.target.closest("[data-match-box-id]")) event.preventDefault();

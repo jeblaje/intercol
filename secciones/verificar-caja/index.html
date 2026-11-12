@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Verificar Caja · INTERCOL</title>
-  <link rel="stylesheet" href="style.css?v=20261112-coincidencias-zona-hora-v2">
+  <link rel="stylesheet" href="style.css?v=20261112-coincidencias-zona-hora-v3">
 </head>
 <body>
   <main class="section-app">
@@ -22,7 +22,7 @@
           <label for="boxNumber">Número de caja</label><input id="boxNumber" name="boxNumber" type="text" placeholder="Ej. 102 o Sin número" required><p class="box-lookup-status" id="boxLookupStatus" role="status" aria-live="polite">Escribe el número de caja y la zona para ver coincidencias. Se ignoran espacios y guiones en el número.</p>
           <label for="address">Dirección <span class="optional-label">(opcional)</span></label><input id="address" name="address" type="text" placeholder="Calle, carrera, número, conjunto…">
           <label for="boxNeighborhood">Barrio</label><input id="boxNeighborhood" name="barrio" type="text" list="boxNeighborhoodOptions" placeholder="Escribe o selecciona un barrio" autocomplete="off" maxlength="120" required><datalist id="boxNeighborhoodOptions"></datalist>
-          <div class="box-zone-search"><label for="boxZone">Zona</label><input id="boxZone" name="zona" type="text" list="boxZoneOptions" placeholder="Escribe o selecciona una zona" autocomplete="off" maxlength="120" required><datalist id="boxZoneOptions"></datalist><div id="boxMatches" class="box-match-list" role="listbox" aria-label="Coincidencias de cajas" hidden></div></div>
+          <div class="box-zone-search"><label for="boxZone">Zona</label><input id="boxZone" name="zona" type="text" list="boxZoneOptions" placeholder="Escribe o selecciona una zona" autocomplete="off" maxlength="120" required><datalist id="boxZoneOptions"></datalist><button id="showBoxMatches" class="box-match-reopen" type="button" hidden>Mostrar coincidencias</button><div id="boxMatches" class="box-match-list" role="region" aria-label="Coincidencias de cajas" hidden></div></div>
           <label for="technician">Técnico</label><input id="technician" name="technician" type="text" placeholder="Nombre del técnico" required>
           <label for="advisor">Asesor</label><input id="advisor" name="advisor" type="text" placeholder="Nombre del asesor" required>
           <label for="filterLink">Link para filtrar la caja <span class="optional-label">(opcional)</span></label><input id="filterLink" name="link" type="url" placeholder="https://...">
@@ -70,7 +70,7 @@
     </section>
 
   </main>
-  <script src="script.js?v=20261112-coincidencias-zona-hora-v2"></script>
+  <script src="script.js?v=20261112-coincidencias-zona-hora-v3"></script>
 </body>
 </html>
 
