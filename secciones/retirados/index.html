@@ -22,6 +22,7 @@
       <section class="retired-list-card">
         <header class="list-heading"><div><div class="card-kicker">SEGUIMIENTO</div><h2>Retiros agendados <span id="recordCount">0</span></h2></div><button type="button" class="filter-button" id="clearSearch">Limpiar</button></header>
         <div class="search-row"><input id="searchInput" type="search" placeholder="Busca por nombre, cédula, barrio, RB o estado"><select id="statusFilter"><option value="">Todos los estados</option><option value="pendiente">Pendientes</option><option value="realizado">Realizados</option><option value="cancelado">Cancelados</option></select></div>
+        <div class="date-filter-grid"><fieldset><legend>Fecha de registro en sistema</legend><label>Desde<input id="createdFrom" type="date"></label><label>Hasta<input id="createdTo" type="date"></label></fieldset><fieldset><legend>Fecha agendada</legend><label>Desde<input id="scheduledFrom" type="date"></label><label>Hasta<input id="scheduledTo" type="date"></label></fieldset></div>
         <div id="recordList" class="record-list"></div><div id="emptyState" class="empty-state">Aún no hay retiros registrados.</div>
       </section>
     </section>
